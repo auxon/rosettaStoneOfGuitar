@@ -338,9 +338,9 @@ struct FretboardView: View {
                 let x = CGFloat(position.fret) * fretWidth + fretWidth / 2 + labelOffset
                 let y = (CGFloat(position.string - 1) + 0.5) * stringSpacing
                 
-                // Use green for diatonic pattern notes, lighter for non-root
-                let color: Color = position.isRoot ? .green.opacity(0.4) : .green.opacity(0.25)
-                let radius: CGFloat = position.isRoot ? 5 : 4
+                // Use bright green for diatonic pattern notes - visible in dark mode
+                let color: Color = position.isRoot ? Color(red: 0.3, green: 0.9, blue: 0.4).opacity(0.7) : Color(red: 0.3, green: 0.9, blue: 0.4).opacity(0.45)
+                let radius: CGFloat = position.isRoot ? 6 : 5
                 
                 context.fill(
                     Path(ellipseIn: CGRect(
@@ -427,12 +427,14 @@ struct FretboardView: View {
             let x = CGFloat(position.fret) * fretWidth + fretWidth / 2 + labelOffset
             let y = size.height / 2.0 + virtualStringOffset * stringSpacing
             
-            // Use different colors for physical vs virtual strings
+            // Use bright colors visible in dark mode
             let isPhysicalString = position.string >= 1 && position.string <= Constants.numberOfStrings
+            let brightBlue = Color(red: 0.3, green: 0.7, blue: 1.0)
+            let brightGreen = Color(red: 0.3, green: 0.9, blue: 0.4)
             let color: Color = position.isRoot ? 
-                (isPhysicalString ? .blue.opacity(0.5) : .blue.opacity(0.3)) :
-                (isPhysicalString ? .green.opacity(0.4) : .green.opacity(0.25))
-            let radius: CGFloat = isPhysicalString ? 5 : 4
+                (isPhysicalString ? brightBlue.opacity(0.75) : brightBlue.opacity(0.5)) :
+                (isPhysicalString ? brightGreen.opacity(0.6) : brightGreen.opacity(0.4))
+            let radius: CGFloat = isPhysicalString ? 6 : 5
             
             context.fill(
                 Path(ellipseIn: CGRect(
@@ -456,9 +458,10 @@ struct FretboardView: View {
             guard viewModel.selectedCAGEDForms.contains(shape.form) else { continue }
             guard !shape.positions.isEmpty else { continue }
             
-            let brightBlue: Color = .blue
-            let darkBlue: Color = Color(red: 0.0, green: 0.0, blue: 0.5)  // Dark blue for root notes
-            let squareSize: CGFloat = 16  // Make slightly larger for visibility
+            // Vibrant colors that work in both light and dark mode
+            let brightCyan: Color = Color(red: 0.0, green: 0.9, blue: 1.0)  // Bright cyan for chord tones
+            let rootOrange: Color = Color(red: 1.0, green: 0.6, blue: 0.0)  // Orange for root notes
+            let squareSize: CGFloat = 18  // Larger for better visibility
             
             // Draw a colored square for each note in the CAGED shape
             for position in shape.positions {
@@ -476,14 +479,15 @@ struct FretboardView: View {
                     height: squareSize
                 )
                 
-                // Draw filled square with bright blue for all notes, dark blue for root notes
                 var squarePath = Path()
                 squarePath.addRect(squareRect)
                 
-                // Use dark blue for root notes, bright blue for others
-                let noteColor = position.isRoot ? darkBlue : brightBlue
-                context.fill(squarePath, with: .color(noteColor.opacity(0.8)))
-                context.stroke(squarePath, with: .color(noteColor), lineWidth: 2.5)
+                // Use orange for root notes, bright cyan for others - high visibility in dark mode
+                let fillColor = position.isRoot ? rootOrange : brightCyan
+                let strokeColor: Color = .white  // White outline for dark mode visibility
+                
+                context.fill(squarePath, with: .color(fillColor.opacity(0.9)))
+                context.stroke(squarePath, with: .color(strokeColor), lineWidth: 2.0)
             }
             
             // Draw CAGED form label at the root position
@@ -502,8 +506,9 @@ struct FretboardView: View {
             
             var bgPath = Path()
             bgPath.addRoundedRect(in: labelRect, cornerSize: CGSize(width: 4, height: 4))
-            context.fill(bgPath, with: .color(darkBlue.opacity(0.9)))
-            context.stroke(bgPath, with: .color(darkBlue), lineWidth: 1.5)
+            let labelBgColor = Color(red: 0.2, green: 0.2, blue: 0.3)  // Dark gray-blue background
+            context.fill(bgPath, with: .color(labelBgColor.opacity(0.95)))
+            context.stroke(bgPath, with: .color(.white), lineWidth: 1.5)
             
             // Draw label text
             let text = Text(shape.form.rawValue)
@@ -516,11 +521,11 @@ struct FretboardView: View {
     private func blockColor(_ type: BlockType) -> Color {
         switch type {
         case .headBlock:
-            return .blue
+            return Color(red: 0.4, green: 0.8, blue: 1.0)  // Bright sky blue
         case .bridgeBlock:
-            return .green
+            return Color(red: 0.4, green: 1.0, blue: 0.6)  // Bright mint green
         case .tripleBlock:
-            return .orange
+            return Color(red: 1.0, green: 0.7, blue: 0.3)  // Bright orange-yellow
         }
     }
     
@@ -530,7 +535,10 @@ struct FretboardView: View {
             let x = CGFloat(position.fret) * fretWidth + fretWidth / 2 + labelOffset
             let y = (CGFloat(position.string - 1) + 0.5) * stringSpacing
             
-            let color: Color = position.isRoot ? .blue : .green
+            // Bright colors for dark mode visibility
+            let rootColor = Color(red: 0.3, green: 0.7, blue: 1.0)  // Bright blue for root
+            let noteColor = Color(red: 0.3, green: 0.9, blue: 0.4)  // Bright green for other notes
+            let color: Color = position.isRoot ? rootColor : noteColor
             let radius: CGFloat = position.isRoot ? 12 : 8
             
             context.fill(
@@ -540,7 +548,7 @@ struct FretboardView: View {
                     width: radius * 2,
                     height: radius * 2
                 )),
-                with: .color(color.opacity(0.6))
+                with: .color(color.opacity(0.8))
             )
         }
     }
@@ -573,7 +581,7 @@ struct FretboardView: View {
                     continue
                 }
                 
-                let color: Color = isSelected ? .red : (isHighlighted ? .clear : .gray.opacity(0.3))
+                let color: Color = isSelected ? Color(red: 1.0, green: 0.3, blue: 0.3) : (isHighlighted ? .clear : .gray.opacity(0.5))
                 let radius: CGFloat = isSelected ? 10 : 6
                 
                 if !isHighlighted || isSelected {
