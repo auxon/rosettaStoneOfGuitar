@@ -109,6 +109,28 @@ struct TunerView: View {
                 }
             }
             .padding(.horizontal)
+            
+            // Responsiveness selector
+            HStack(spacing: 8) {
+                Text("Speed:")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                
+                ForEach(TunerResponsiveness.allCases, id: \.self) { level in
+                    Button(action: {
+                        viewModel.setResponsiveness(level)
+                    }) {
+                        Text(level.rawValue)
+                            .font(.caption)
+                            .fontWeight(viewModel.responsiveness == level ? .bold : .regular)
+                            .foregroundColor(viewModel.responsiveness == level ? .black : .white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(viewModel.responsiveness == level ? Color.cyan : Color.white.opacity(0.15))
+                            .cornerRadius(8)
+                    }
+                }
+            }
         }
     }
     

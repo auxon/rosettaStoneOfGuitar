@@ -23,11 +23,17 @@ class TunerViewModel: ObservableObject {
     @Published var permissionDenied: Bool = false
     @Published var referencePitch: Double = 440.0  // A4 reference pitch (can be adjusted)
     @Published var centsFromTarget: Double = 0.0   // Cents offset from target string
+    @Published var responsiveness: TunerResponsiveness = .fast  // Detection speed setting
     
     private var audioEngine: AVAudioEngine?
     private var inputNode: AVAudioInputNode?
     private var actualSampleRate: Double = 44100.0  // Will be updated from audio format
-    private let bufferSize: AVAudioFrameCount = 4096
+    
+    // Buffer size affects latency vs accuracy tradeoff
+    // Smaller = faster response, larger = more accurate for low notes
+    private var bufferSize: AVAudioFrameCount {
+        responsiveness.bufferSize
+    }
     
     // Standard tuning frequencies (in Hz)
     static let noteFrequencies: [(note: String, frequency: Double)] = [
@@ -290,6 +296,17 @@ class TunerViewModel: ObservableObject {
         updateTargetStrings()
     }
     
+    func setResponsiveness(_ newResponsiveness: TunerResponsiveness) {
+        let wasListening = isListening
+        if wasListening {
+            stopListening()
+        }
+        responsiveness = newResponsiveness
+        if wasListening {
+            startListening()
+        }
+    }
+    
     private func findClosestString(frequency: Double) -> TunerString? {
         var closestString: TunerString?
         var minDifference = Double.infinity
@@ -409,6 +426,34 @@ struct TunerString: Identifiable {
     
     var displayName: String {
         "\(number): \(note)"
+    }
+}
+
+enum TunerResponsiveness: String, CaseIterable {
+    case fast = "Fast"
+    case balanced = "Balanced"
+    case accurate = "Accurate"
+    
+    var bufferSize: AVAudioFrameCount {
+        switch self {
+        case .fast:
+            return 1024      // ~21ms at 48kHz - very responsive
+        case .balanced:
+            return 2048      // ~43ms at 48kHz - good balance
+        case .accurate:
+            return 4096      // ~85ms at 48kHz - best for low notes
+        }
+    }
+    
+    var description: String {
+        switch self {
+        case .fast:
+            return "Fastest response, may be less stable"
+        case .balanced:
+            return "Good balance of speed and accuracy"
+        case .accurate:
+            return "Most accurate, slight delay"
+        }
     }
 }
 
