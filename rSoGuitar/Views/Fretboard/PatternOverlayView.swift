@@ -35,7 +35,7 @@ struct PatternOverlayView: View {
     
     private func positionPoint(_ position: FretboardPosition) -> CGPoint {
         let x = CGFloat(position.fret) * fretWidth + fretWidth / 2
-        let y = (CGFloat(position.string - 1) + 0.5) * stringSpacing
+        let y = (CGFloat(Constants.numberOfStrings - position.string) + 0.5) * stringSpacing
         return CGPoint(x: x, y: y)
     }
     

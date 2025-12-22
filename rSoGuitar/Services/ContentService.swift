@@ -78,7 +78,7 @@ class ContentService {
         let introContent: [LessonContent] = [
             .text("Welcome to the Rosetta Stone of Guitar! This method will teach you to understand the guitar fretboard through four core concepts: Spiral Mapping, Jumping, Family of Chords, and Familial Hierarchy."),
             .text("The guitar fretboard may seem complex, but with the rSoGuitar method, you'll learn to see patterns that make navigation intuitive and musical."),
-            .text("The fretboard is divided into three main blocks: HEAD block (lower frets 0-4), BRIDGE block (middle frets 5-9), and TRIPLE BLOCK (higher frets 10+). These blocks help organize the fretboard into manageable regions."),
+            .text("The fretboard is divided into three main blocks: HEAD block (top three strings: high E, B, G), BRIDGE block (middle strings: D and A), and TRIPLE BLOCK (the 1-3-5 triad pattern on three consecutive strings). These blocks help organize the fretboard into manageable regions based on string groups and pattern positions."),
             .text("Let's start by exploring the fretboard. Tap on any note in the demo below to hear it play. You can toggle the blocks overlay to see how the fretboard is organized."),
             .fretboardDemo(introPattern)
         ]
@@ -97,10 +97,11 @@ class ContentService {
         let spiralContent: [LessonContent] = [
             .text("Spiral Mapping is the first core concept. It shows how notes in a key form a vertical pattern that spirals across the fretboard."),
             .text("The spiral pattern connects notes of the same key from one end of the fretboard to the other, creating a visual map you can follow."),
-            .text("The HEAD block contains the foundational notes of the key in the lower frets (0-4). As you follow the spiral mapping pattern, you'll see how it connects through the HEAD block to other regions."),
+            .text("The HEAD block covers the top three strings (high E, B, G) and contains the root, major 3rd, and 5th in a tight triad shape. This is where many open-position chords live, and it's the 'entry point' when landing on a new root. As you follow the spiral mapping pattern, you'll see how it connects through the HEAD block to other regions."),
             .fretboardDemo(spiralPattern),
             .text("Try exploring the spiral mapping pattern for different keys. Notice how the pattern maintains its structure regardless of the starting key."),
-            .text("In the pattern above, the blue circles represent root notes (the key note), and green circles show other notes in the key. The orange lines connect the pattern positions. Toggle the blocks overlay to see how the HEAD block relates to the spiral pattern."),
+            .text("In the pattern above, the blue circles represent root notes (the key note), and green circles show other notes in the key. The orange lines connect the pattern positions. Toggle the blocks overlay to see how the HEAD block (top three strings) relates to the spiral pattern."),
+            .text("The TRIPLE BLOCK highlights the 1-3-5 triad pattern (root, major 3rd, perfect 5th) on three consecutive strings. This pattern appears multiple times across the fretboard and is the core of chord building. Enable the TRIPLE BLOCK overlay to see all the triad positions - this is the magic that makes chord building instant anywhere on the neck."),
             .exercise(Exercise(
                 title: "Spiral Mapping Practice",
                 instructions: "Explore the fretboard demo above. Try tapping on different notes to hear them. Notice how the pattern forms a spiral across the strings. Enable the HEAD block overlay to see how the foundational notes are organized.",
@@ -123,10 +124,10 @@ class ContentService {
         let jumpingContent: [LessonContent] = [
             .text("Jumping is about horizontal movement on the fretboard. It teaches you which frets you can move to while staying in key."),
             .text("By understanding jumping rules, you can navigate horizontally without hitting 'bad' notes that are outside your current key."),
-            .text("The BRIDGE block (also called tail block) is the middle region (frets 5-9). Jumping rules help you navigate horizontally within this block while staying in key. Understanding the BRIDGE block helps you see where you can safely jump."),
+            .text("The BRIDGE block spans the middle strings (D and A) and contains connecting notes like the 6th, 7th, root octave, and 2nd/9th. It acts as the transitional zone between the head and lower blocks, enabling position shifts and diagonal runs. Jumping rules help you navigate horizontally while staying in key."),
             .fretboardDemo(jumpingPattern),
             .text("In the demo above, you can see valid jump positions from a starting position. All highlighted positions are notes that are in the key, so you can safely jump to them."),
-            .text("Toggle the BRIDGE block overlay to see how the middle frets relate to jumping. Notice how many valid jump positions fall within the BRIDGE block region."),
+            .text("Toggle the BRIDGE block overlay to see how the middle strings (D and A) relate to jumping. Notice how the bridge connects the head and lower regions, creating seamless transitions."),
             .exercise(Exercise(
                 title: "Jumping Practice",
                 instructions: "Study the jumping pattern above. Notice how you can move horizontally (same string, different frets) while staying in key. Try tapping different positions to hear the notes. Enable the BRIDGE block to see how jumping works within this region.",

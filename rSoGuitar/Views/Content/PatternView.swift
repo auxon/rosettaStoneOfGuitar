@@ -78,53 +78,51 @@ struct PatternView: View {
     
     private var blockOverlay: some View {
         Canvas { context, size in
+            // All blocks are drawn as individual note positions (6 notes each)
+            // HEAD: XX-X pattern, BRIDGE: X-XX pattern, TRIPLE: X-X-X pattern
             for block in blocks {
                 guard selectedBlockTypes.contains(block.type) else { continue }
                 
-                // Calculate block rectangle
-                let startFret = CGFloat(block.fretRange.lowerBound)
-                let endFret = CGFloat(block.fretRange.upperBound)
-                let startX = startFret * fretWidth
-                let endX = (endFret + 1) * fretWidth
-                let startY = CGFloat(block.stringRange.lowerBound - 1) * stringSpacing
-                let endY = CGFloat(block.stringRange.upperBound) * stringSpacing
+                for position in block.positions {
+                    let point = positionPoint(position)
+                    let color = blockColor(block.type)
+                    let radius: CGFloat = 12
+                    
+                    // Draw filled circle with outline
+                    context.fill(
+                        Path(ellipseIn: CGRect(
+                            x: point.x - radius,
+                            y: point.y - radius,
+                            width: radius * 2,
+                            height: radius * 2
+                        )),
+                        with: .color(color.opacity(0.4))
+                    )
+                    
+                    context.stroke(
+                        Path(ellipseIn: CGRect(
+                            x: point.x - radius,
+                            y: point.y - radius,
+                            width: radius * 2,
+                            height: radius * 2
+                        )),
+                        with: .color(color),
+                        lineWidth: 3
+                    )
+                }
                 
-                let blockRect = CGRect(
-                    x: startX,
-                    y: startY,
-                    width: endX - startX,
-                    height: endY - startY
-                )
-                
-                // Draw block fill
-                let fillColor = blockColor(block.type).opacity(0.2)
-                var fillPath = Path()
-                fillPath.addRect(blockRect)
-                context.fill(
-                    fillPath,
-                    with: .color(fillColor)
-                )
-                
-                // Draw block outline
-                let outlineColor = blockColor(block.type)
-                var outlinePath = Path()
-                outlinePath.addRect(blockRect)
-                context.stroke(
-                    outlinePath,
-                    with: .color(outlineColor),
-                    lineWidth: 3
-                )
-                
-                // Draw block label
-                let labelPoint = CGPoint(
-                    x: blockRect.midX,
-                    y: blockRect.minY + 15
-                )
-                let text = Text(block.name)
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundColor(outlineColor)
-                context.draw(text, at: labelPoint)
+                // Draw label for block
+                if let firstPos = block.positions.first {
+                    let labelPoint = CGPoint(
+                        x: positionPoint(firstPos).x,
+                        y: positionPoint(firstPos).y - 20
+                    )
+                    let text = Text(block.name)
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(blockColor(block.type))
+                    context.draw(text, at: labelPoint)
+                }
             }
         }
     }
@@ -157,7 +155,7 @@ struct PatternView: View {
             
             // Draw strings
             for string in 1...Constants.numberOfStrings {
-                let y = (CGFloat(string - 1) + 0.5) * stringSpacing
+                let y = (CGFloat(Constants.numberOfStrings - string) + 0.5) * stringSpacing
                 context.stroke(
                     Path { path in
                         path.move(to: CGPoint(x: 0, y: y))
@@ -213,7 +211,7 @@ struct PatternView: View {
     
     private func positionPoint(_ position: FretboardPosition) -> CGPoint {
         let x = CGFloat(position.fret) * fretWidth + fretWidth / 2
-        let y = (CGFloat(position.string - 1) + 0.5) * stringSpacing
+        let y = (CGFloat(Constants.numberOfStrings - position.string) + 0.5) * stringSpacing
         return CGPoint(x: x, y: y)
     }
     

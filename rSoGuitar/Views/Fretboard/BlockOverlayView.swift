@@ -10,6 +10,8 @@ import SwiftUI
 struct BlockOverlayView: View {
     let blocks: [Block]
     let selectedBlockTypes: Set<BlockType>
+    let diatonicPattern: [FretboardPosition]
+    let showFullPattern: Bool
     let fretboardSize: CGSize
     let fretWidth: CGFloat
     let stringSpacing: CGFloat
@@ -17,61 +19,95 @@ struct BlockOverlayView: View {
     
     var body: some View {
         Canvas { context, size in
-            drawBlocks(context: context, size: size)
+            drawPatternAndBlocks(context: context, size: size)
         }
     }
     
-    private func drawBlocks(context: GraphicsContext, size: CGSize) {
+    private func drawPatternAndBlocks(context: GraphicsContext, size: CGSize) {
         let fretWidth = size.width / CGFloat(maxFret + 1)
         let stringSpacing = size.height / CGFloat(Constants.numberOfStrings)
         
+        // Draw full diatonic pattern if enabled
+        if showFullPattern {
+            drawDiatonicPattern(context: context, size: size, fretWidth: fretWidth, stringSpacing: stringSpacing)
+        }
+        
+        // Draw blocks by highlighting each note with a colored square
         for block in blocks {
             guard selectedBlockTypes.contains(block.type) else { continue }
             
-            // Calculate block rectangle
-            let startFret = CGFloat(block.fretRange.lowerBound)
-            let endFret = CGFloat(block.fretRange.upperBound)
-            let startX = startFret * fretWidth
-            let endX = (endFret + 1) * fretWidth
-            let startY = CGFloat(block.stringRange.lowerBound - 1) * stringSpacing
-            let endY = CGFloat(block.stringRange.upperBound) * stringSpacing
+            guard !block.positions.isEmpty else { continue }
             
-            let blockRect = CGRect(
-                x: startX,
-                y: startY,
-                width: endX - startX,
-                height: endY - startY
-            )
+            let color = blockColor(block.type)
+            let squareSize: CGFloat = 16  // Size of the square highlight
             
-            // Draw block fill
-            let fillColor = blockColor(block.type).opacity(0.2)
-            var fillPath = Path()
-            fillPath.addRect(blockRect)
+            // Draw a colored square for each note in the block
+            for position in block.positions {
+                let x = CGFloat(position.fret) * fretWidth + fretWidth / 2
+                let y = (CGFloat(Constants.numberOfStrings - position.string) + 0.5) * stringSpacing
+                
+                let squareRect = CGRect(
+                    x: x - squareSize / 2,
+                    y: y - squareSize / 2,
+                    width: squareSize,
+                    height: squareSize
+                )
+                
+                // Draw filled square with the block's color
+                var squarePath = Path()
+                squarePath.addRect(squareRect)
+                
+                context.fill(squarePath, with: .color(color.opacity(0.6)))
+                context.stroke(squarePath, with: .color(color), lineWidth: 2)
+            }
+            
+            // Draw block label at the first note position
+            if let firstPos = block.positions.first {
+                let labelX = CGFloat(firstPos.fret) * fretWidth + fretWidth / 2
+                let labelY = (CGFloat(Constants.numberOfStrings - firstPos.string) + 0.5) * stringSpacing - 20
+                
+                // Draw background rectangle for label
+                let labelWidth = CGFloat(max(60, block.name.count * 7))
+                let labelHeight: CGFloat = 18
+                let labelRect = CGRect(
+                    x: labelX - labelWidth / 2,
+                    y: labelY - labelHeight / 2,
+                    width: labelWidth,
+                    height: labelHeight
+                )
+                
+                var bgPath = Path()
+                bgPath.addRoundedRect(in: labelRect, cornerSize: CGSize(width: 4, height: 4))
+                context.fill(bgPath, with: .color(color.opacity(0.9)))
+                context.stroke(bgPath, with: .color(color), lineWidth: 1)
+                
+                // Draw label text
+                let text = Text(block.name)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white)
+                context.draw(text, at: CGPoint(x: labelX, y: labelY))
+            }
+        }
+    }
+    
+    private func drawDiatonicPattern(context: GraphicsContext, size: CGSize, fretWidth: CGFloat, stringSpacing: CGFloat) {
+        // Draw all diatonic notes as light dots
+        for position in diatonicPattern {
+            let x = CGFloat(position.fret) * fretWidth + fretWidth / 2
+            let y = (CGFloat(Constants.numberOfStrings - position.string) + 0.5) * stringSpacing
+            
+            let color: Color = position.isRoot ? .blue.opacity(0.2) : .gray.opacity(0.15)
+            let radius: CGFloat = position.isRoot ? 6 : 4
+            
             context.fill(
-                fillPath,
-                with: .color(fillColor)
+                Path(ellipseIn: CGRect(
+                    x: x - radius,
+                    y: y - radius,
+                    width: radius * 2,
+                    height: radius * 2
+                )),
+                with: .color(color)
             )
-            
-            // Draw block outline
-            let outlineColor = blockColor(block.type)
-            var outlinePath = Path()
-            outlinePath.addRect(blockRect)
-            context.stroke(
-                outlinePath,
-                with: .color(outlineColor),
-                lineWidth: 3
-            )
-            
-            // Draw block label
-            let labelPoint = CGPoint(
-                x: blockRect.midX,
-                y: blockRect.minY + 15
-            )
-            let text = Text(block.name)
-                .font(.caption)
-                .fontWeight(.bold)
-                .foregroundColor(outlineColor)
-            context.draw(text, at: labelPoint)
         }
     }
     
@@ -89,9 +125,12 @@ struct BlockOverlayView: View {
 
 #Preview {
     let blocks = BlockGenerator.allBlocks(for: .C)
+    let pattern = BlockGenerator.diatonicPattern(for: .C)
     BlockOverlayView(
         blocks: blocks,
         selectedBlockTypes: [.headBlock, .bridgeBlock, .tripleBlock],
+        diatonicPattern: pattern,
+        showFullPattern: true,
         fretboardSize: CGSize(width: 500, height: 200),
         fretWidth: 40,
         stringSpacing: 30,

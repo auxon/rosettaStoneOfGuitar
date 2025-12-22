@@ -9,7 +9,9 @@ import Foundation
 import Combine
 
 struct FretboardCalculator {
-    static let standardTuning: [Note] = [.E, .A, .D, .G, .B, .E]
+    // Standard tuning indexed by string number (1=high E, 6=low E)
+    // String 1: E (high), String 2: B, String 3: G, String 4: D, String 5: A, String 6: E (low)
+    static let standardTuning: [Note] = [.E, .B, .G, .D, .A, .E]
     
     /// Calculate the note at a specific string and fret position
     static func noteAt(string: Int, fret: Int, tuning: [Note] = standardTuning) -> Note {
