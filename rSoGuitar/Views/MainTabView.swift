@@ -31,6 +31,12 @@ struct MainTabView: View {
                 Label("Fretboard", systemImage: "guitars.fill")
             }
             
+            // Tuner Tab
+            TunerView()
+            .tabItem {
+                Label("Tuner", systemImage: "tuningfork")
+            }
+            
             // Concepts Tab
             NavigationView {
                 ConceptsListView()
