@@ -37,6 +37,12 @@ struct MainTabView: View {
                 Label("Tuner", systemImage: "tuningfork")
             }
             
+            // Circle of Fifths Tab
+            CircleOfFifthsTrainerView()
+            .tabItem {
+                Label("Circle", systemImage: "circle.hexagongrid.fill")
+            }
+            
             // Concepts Tab
             NavigationView {
                 ConceptsListView()
