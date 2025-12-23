@@ -37,6 +37,12 @@ struct MainTabView: View {
                 Label("Tuner", systemImage: "tuningfork")
             }
             
+            // Quiz Game Tab
+            MasteryGameView()
+            .tabItem {
+                Label("Quiz", systemImage: "questionmark.circle.fill")
+            }
+            
             // Concepts Tab
             NavigationView {
                 ConceptsListView()
