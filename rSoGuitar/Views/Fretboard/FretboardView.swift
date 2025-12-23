@@ -163,6 +163,51 @@ struct FretboardView: View {
                 }
             }
             
+            // Mode controls
+            VStack(spacing: 8) {
+                Toggle("Show Modes", isOn: $viewModel.showModes)
+                    .padding(.horizontal)
+                    .onChange(of: viewModel.showModes) { _, _ in
+                        viewModel.toggleModes()
+                    }
+                
+                if viewModel.showModes {
+                    // Mode selector
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(Mode.allCases, id: \.self) { mode in
+                                ModeToggleButton(
+                                    mode: mode,
+                                    isSelected: viewModel.selectedMode == mode
+                                ) {
+                                    viewModel.selectMode(mode)
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+                    
+                    // Mode info
+                    if let shape = viewModel.modeShape {
+                        VStack(spacing: 4) {
+                            HStack {
+                                Text("\(viewModel.selectedKey.rootNote.rawValue) \(viewModel.selectedMode.rawValue)")
+                                    .font(.headline)
+                                    .foregroundColor(.purple)
+                                Text("(\(viewModel.selectedMode.quality))")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Text(shape.description)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+            }
+            
             // Sound controls
             HStack(spacing: 16) {
                 // Sound toggle
@@ -243,6 +288,33 @@ struct FretboardView: View {
                             .stroke(color, lineWidth: 2)
                     )
                     .cornerRadius(6)
+            }
+        }
+    }
+    
+    private struct ModeToggleButton: View {
+        let mode: Mode
+        let isSelected: Bool
+        let action: () -> Void
+        
+        var body: some View {
+            Button(action: action) {
+                VStack(spacing: 2) {
+                    Text(mode.romanNumeral)
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                    Text(mode.rawValue)
+                        .font(.caption2)
+                }
+                .foregroundColor(isSelected ? .white : .purple)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(isSelected ? Color.purple : Color.clear)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.purple, lineWidth: 2)
+                )
+                .cornerRadius(6)
             }
         }
     }
@@ -374,6 +446,11 @@ struct FretboardView: View {
         // Draw CAGED shapes if enabled
         if viewModel.showCAGED {
             drawCAGEDShapes(context: context, size: size, fretWidth: fretWidth, stringSpacing: stringSpacing)
+        }
+        
+        // Draw mode shape if enabled
+        if viewModel.showModes {
+            drawModeShape(context: context, size: size, fretWidth: fretWidth, stringSpacing: stringSpacing)
         }
         
         // Draw pattern overlay if enabled
@@ -571,6 +648,76 @@ struct FretboardView: View {
                 .font(.system(size: 11, weight: .bold))
                 .foregroundColor(.white)
             context.draw(text, at: CGPoint(x: labelX, y: labelY))
+        }
+    }
+    
+    private func drawModeShape(context: GraphicsContext, size: CGSize, fretWidth: CGFloat, stringSpacing: CGFloat) {
+        let labelOffset: CGFloat = 24
+        
+        guard let shape = viewModel.modeShape else { return }
+        
+        // Mode colors - purple theme with different shades for scale degrees
+        let rootColor = Color(red: 0.7, green: 0.3, blue: 0.9)      // Bright purple for root
+        let characteristicColor = Color(red: 1.0, green: 0.5, blue: 0.8)  // Pink for characteristic note
+        let normalColor = Color(red: 0.6, green: 0.4, blue: 0.8)    // Lighter purple for other notes
+        
+        let characteristicInterval = viewModel.selectedMode.characteristicInterval
+        
+        for position in shape.positions {
+            guard position.fret >= 0 && position.fret <= viewModel.maxFret else { continue }
+            guard position.string >= 1 && position.string <= Constants.numberOfStrings else { continue }
+            
+            let x = CGFloat(position.fret) * fretWidth + fretWidth / 2 + labelOffset
+            let y = (CGFloat(position.string - 1) + 0.5) * stringSpacing
+            
+            // Determine if this is the characteristic note
+            let semitones = (position.note.semitonesFromC - viewModel.selectedKey.rootNote.semitonesFromC + 12) % 12
+            let isCharacteristic = semitones == characteristicInterval
+            
+            // Choose color based on note type
+            let fillColor: Color
+            let radius: CGFloat
+            if position.isRoot {
+                fillColor = rootColor
+                radius = 12
+            } else if isCharacteristic {
+                fillColor = characteristicColor
+                radius = 10
+            } else {
+                fillColor = normalColor
+                radius = 8
+            }
+            
+            // Draw filled circle
+            context.fill(
+                Path(ellipseIn: CGRect(
+                    x: x - radius,
+                    y: y - radius,
+                    width: radius * 2,
+                    height: radius * 2
+                )),
+                with: .color(fillColor.opacity(0.85))
+            )
+            
+            // Draw white outline
+            context.stroke(
+                Path(ellipseIn: CGRect(
+                    x: x - radius,
+                    y: y - radius,
+                    width: radius * 2,
+                    height: radius * 2
+                )),
+                with: .color(.white),
+                lineWidth: 1.5
+            )
+            
+            // Draw interval name for root notes
+            if position.isRoot {
+                let intervalText = Text("R")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.white)
+                context.draw(intervalText, at: CGPoint(x: x, y: y))
+            }
         }
     }
     

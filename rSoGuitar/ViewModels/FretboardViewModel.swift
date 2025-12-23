@@ -35,6 +35,12 @@ class FretboardViewModel: ObservableObject {
     @Published var isSoundEnabled: Bool = true
     @Published var volume: Float = 0.7
     
+    // Mode support
+    @Published var showModes: Bool = false
+    @Published var selectedMode: Mode = .ionian
+    @Published var modeShape: ModeShape?
+    @Published var showAllModeNotes: Bool = true  // Show all notes vs position-based
+    
     var patternOffset: (fret: Int, string: Int) {
         (patternOffsetFret, patternOffsetString)
     }
@@ -51,6 +57,7 @@ class FretboardViewModel: ObservableObject {
         updateDiatonicPattern()
         updateInfiniteBassPattern()
         updateCAGEDShapes()
+        updateModeShape()
     }
     
     func selectKey(_ key: Key) {
@@ -62,6 +69,8 @@ class FretboardViewModel: ObservableObject {
         updateDiatonicPattern()
         // Always update CAGED shapes when key changes, even if not currently showing
         updateCAGEDShapes()
+        // Update mode shape when key changes
+        updateModeShape()
     }
     
     func selectPosition(_ position: FretboardPosition) {
@@ -358,6 +367,41 @@ class FretboardViewModel: ObservableObject {
         if showCAGED {
             updateCAGEDShapes()
         }
+    }
+    
+    // MARK: - Mode Methods
+    
+    func updateModeShape() {
+        modeShape = ModeGenerator.modeFromRoot(selectedMode, rootNote: selectedKey.rootNote, maxFret: maxFret)
+    }
+    
+    func toggleModes() {
+        showModes.toggle()
+        if showModes {
+            updateModeShape()
+        }
+    }
+    
+    func selectMode(_ mode: Mode) {
+        selectedMode = mode
+        updateModeShape()
+    }
+    
+    func toggleAllModeNotes() {
+        showAllModeNotes.toggle()
+        updateModeShape()
+    }
+    
+    func isPositionInMode(_ position: FretboardPosition) -> Bool {
+        guard let shape = modeShape else { return false }
+        return shape.positions.contains { pos in
+            pos.string == position.string && pos.fret == position.fret
+        }
+    }
+    
+    func getModeIntervalName(for position: FretboardPosition) -> String {
+        guard let shape = modeShape else { return "" }
+        return ModeGenerator.intervalName(for: position.note, in: selectedMode, rootNote: selectedKey.rootNote)
     }
 }
 
