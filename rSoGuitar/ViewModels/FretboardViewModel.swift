@@ -32,6 +32,8 @@ class FretboardViewModel: ObservableObject {
     @Published var showCAGED: Bool = false
     @Published var cagedShapes: [CAGEDShape] = []
     @Published var selectedCAGEDForms: Set<CAGEDForm> = []
+    @Published var isSoundEnabled: Bool = true
+    @Published var volume: Float = 0.7
     
     var patternOffset: (fret: Int, string: Int) {
         (patternOffsetFret, patternOffsetString)
@@ -39,6 +41,10 @@ class FretboardViewModel: ObservableObject {
     
     private let audioService = AudioService.shared
     private let contentService = ContentService.shared
+    
+    var audioServicePublisher: AudioService {
+        audioService
+    }
     
     init() {
         updateBlocks()
@@ -60,7 +66,29 @@ class FretboardViewModel: ObservableObject {
     
     func selectPosition(_ position: FretboardPosition) {
         selectedPosition = position
-        audioService.playNote(position.note)
+        // Play the note at the correct octave based on string/fret position
+        audioService.playNoteAt(string: position.string, fret: position.fret)
+    }
+    
+    // MARK: - Audio Control
+    
+    func toggleSound() {
+        isSoundEnabled.toggle()
+        audioService.isSoundEnabled = isSoundEnabled
+    }
+    
+    func setVolume(_ newVolume: Float) {
+        volume = newVolume
+        audioService.setVolume(newVolume)
+    }
+    
+    func playSelectedNotes() {
+        // Play all highlighted/selected positions
+        if !highlightedPositions.isEmpty {
+            audioService.playNotes(highlightedPositions)
+        } else if let selected = selectedPosition {
+            audioService.playNoteAt(string: selected.string, fret: selected.fret)
+        }
     }
     
     func togglePatternOverlay() {

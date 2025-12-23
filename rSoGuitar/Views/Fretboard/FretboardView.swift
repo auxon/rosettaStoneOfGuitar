@@ -162,6 +162,62 @@ struct FretboardView: View {
                     .padding(.horizontal)
                 }
             }
+            
+            // Sound controls
+            HStack(spacing: 16) {
+                // Sound toggle
+                Button(action: {
+                    viewModel.toggleSound()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: viewModel.isSoundEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                            .foregroundColor(viewModel.isSoundEnabled ? .blue : .gray)
+                        Text(viewModel.isSoundEnabled ? "Sound On" : "Sound Off")
+                            .font(.caption)
+                            .foregroundColor(viewModel.isSoundEnabled ? .blue : .gray)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(viewModel.isSoundEnabled ? Color.blue.opacity(0.15) : Color.gray.opacity(0.15))
+                    .cornerRadius(8)
+                }
+                
+                // Volume slider
+                if viewModel.isSoundEnabled {
+                    HStack(spacing: 8) {
+                        Image(systemName: "speaker.fill")
+                            .foregroundColor(.gray)
+                            .font(.caption)
+                        Slider(value: $viewModel.volume, in: 0...1, step: 0.1)
+                            .frame(width: 100)
+                            .onChange(of: viewModel.volume) { _, newValue in
+                                viewModel.setVolume(newValue)
+                            }
+                        Image(systemName: "speaker.wave.3.fill")
+                            .foregroundColor(.gray)
+                            .font(.caption)
+                    }
+                }
+                
+                // Play selected notes button
+                if viewModel.selectedPosition != nil || !viewModel.highlightedPositions.isEmpty {
+                    Button(action: {
+                        viewModel.playSelectedNotes()
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "play.fill")
+                            Text("Play")
+                                .font(.caption)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.green)
+                        .cornerRadius(8)
+                    }
+                }
+            }
+            .padding(.horizontal)
         }
         .padding(.vertical)
         .background(Color(.systemGray6))
