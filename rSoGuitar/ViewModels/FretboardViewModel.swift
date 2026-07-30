@@ -14,13 +14,15 @@ class FretboardViewModel: ObservableObject {
     @Published var selectedPattern: Pattern?
     @Published var selectedPosition: FretboardPosition?
     @Published var highlightedPositions: [FretboardPosition] = []
-    @Published var showPatternOverlay = false
+    /// Pattern overlay on by default so Spiral Mapping is visible immediately.
+    @Published var showPatternOverlay = true
     @Published var patternType: PatternType = .spiralMapping
     @Published var maxFret: Int = Constants.defaultFretCount
-    @Published var showBlocks: Bool = false
-    @Published var selectedBlockTypes: Set<BlockType> = []
+    /// Blocks on by default — rSoG milestones front and center.
+    @Published var showBlocks: Bool = true
+    @Published var selectedBlockTypes: Set<BlockType> = [.headBlock, .bridgeBlock, .tripleBlock]
     @Published var blocks: [Block] = []
-    @Published var showFullPattern: Bool = false
+    @Published var showFullPattern: Bool = true
     @Published var diatonicPattern: [FretboardPosition] = []
     @Published var blockOffsets: [UUID: CGSize] = [:]  // Track drag offsets for each block
     @Published var draggedBlockId: UUID? = nil  // Currently dragged block
@@ -41,6 +43,11 @@ class FretboardViewModel: ObservableObject {
     @Published var modeShape: ModeShape?
     @Published var showAllModeNotes: Bool = true  // Show all notes vs position-based
     
+    /// RSOG Overview: all blocks + full diatonic + spiral path together.
+    @Published var isOverviewMode: Bool = true
+    /// Block currently inspected via tap (shows detail sheet).
+    @Published var inspectedBlock: Block?
+    
     var patternOffset: (fret: Int, string: Int) {
         (patternOffsetFret, patternOffsetString)
     }
@@ -58,6 +65,7 @@ class FretboardViewModel: ObservableObject {
         updateInfiniteBassPattern()
         updateCAGEDShapes()
         updateModeShape()
+        updatePattern()
     }
     
     func selectKey(_ key: Key) {
@@ -101,19 +109,46 @@ class FretboardViewModel: ObservableObject {
     }
     
     func togglePatternOverlay() {
-        showPatternOverlay.toggle()
-        if showPatternOverlay {
+        setShowPatternOverlay(!showPatternOverlay)
+    }
+    
+    func setShowPatternOverlay(_ show: Bool) {
+        showPatternOverlay = show
+        if show {
             updatePattern()
         } else {
             highlightedPositions = []
+            selectedPattern = nil
+            isOverviewMode = false
         }
     }
     
     func setPatternType(_ type: PatternType) {
         patternType = type
-        if showPatternOverlay {
-            updatePattern()
-        }
+        isOverviewMode = false
+        // Emphasize the blocks that teach this concept.
+        selectedBlockTypes = RSOGConceptInfo.suggestedBlocks(for: type)
+        showBlocks = !selectedBlockTypes.isEmpty
+        showPatternOverlay = true
+        updatePattern()
+    }
+    
+    /// Activate the full rSoG overview: HEAD + BRIDGE + TRIPLE + diatonic + spiral.
+    func enableOverviewMode() {
+        isOverviewMode = true
+        patternType = .spiralMapping
+        showBlocks = true
+        selectedBlockTypes = [.headBlock, .bridgeBlock, .tripleBlock]
+        showFullPattern = true
+        showPatternOverlay = true
+        showCAGED = false
+        showModes = false
+        showInfiniteBassPattern = false
+        updatePattern()
+    }
+    
+    func inspectBlock(_ block: Block?) {
+        inspectedBlock = block
     }
     
     func updatePattern() {
@@ -154,11 +189,15 @@ class FretboardViewModel: ObservableObject {
     // MARK: - Block Methods
     
     func toggleBlocks() {
-        showBlocks.toggle()
-        if !showBlocks {
+        setShowBlocks(!showBlocks)
+    }
+    
+    func setShowBlocks(_ show: Bool) {
+        showBlocks = show
+        if !show {
             selectedBlockTypes.removeAll()
+            isOverviewMode = false
         } else if selectedBlockTypes.isEmpty {
-            // If showing blocks but none selected, select all
             selectedBlockTypes = [.headBlock, .bridgeBlock, .tripleBlock]
         }
     }
@@ -170,6 +209,15 @@ class FretboardViewModel: ObservableObject {
             selectedBlockTypes.insert(type)
         }
         showBlocks = !selectedBlockTypes.isEmpty
+        isOverviewMode = false
+    }
+    
+    func toggleFullPattern() {
+        showFullPattern.toggle()
+        if showFullPattern {
+            updateDiatonicPattern()
+        }
+        isOverviewMode = false
     }
     
     func updateBlocks() {
@@ -206,13 +254,7 @@ class FretboardViewModel: ObservableObject {
         if showInfiniteBassPattern {
             updateInfiniteBassPattern()
         }
-    }
-    
-    func toggleFullPattern() {
-        showFullPattern.toggle()
-        if showFullPattern {
-            updateDiatonicPattern()
-        }
+        isOverviewMode = false
     }
     
     func isPositionInBlock(_ position: FretboardPosition, blockType: BlockType) -> Bool {

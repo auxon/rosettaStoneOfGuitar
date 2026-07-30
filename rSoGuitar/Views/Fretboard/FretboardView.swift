@@ -11,26 +11,72 @@ struct FretboardView: View {
     @StateObject private var viewModel = FretboardViewModel()
     @State private var fretWidth: CGFloat = 40
     @State private var stringSpacing: CGFloat = 30
+    @State private var showAdvancedControls = false
     
     var body: some View {
         VStack(spacing: 0) {
-            // Controls
-            controlsView
+            ScrollView {
+                controlsView
+            }
+            .frame(maxHeight: showAdvancedControls ? 360 : 220)
             
             // Fretboard
             ScrollView([.horizontal, .vertical], showsIndicators: true) {
                 fretboardCanvas
-                    .frame(minWidth: CGFloat(viewModel.maxFret + 1) * fretWidth + 24, // Add space for string labels
+                    .frame(minWidth: CGFloat(viewModel.maxFret + 1) * fretWidth + 24,
                            minHeight: CGFloat(Constants.numberOfStrings) * stringSpacing)
                     .padding()
             }
         }
         .navigationTitle("Fretboard Explorer")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $viewModel.inspectedBlock) { block in
+            BlockDetailSheet(block: block)
+        }
     }
     
     private var controlsView: some View {
         VStack(spacing: 12) {
+            // RSOG concept picker — front and center
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("rSoG Concept")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Button {
+                        viewModel.enableOverviewMode()
+                    } label: {
+                        Label("Overview", systemImage: "square.3.layers.3d")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(viewModel.isOverviewMode ? Color.accentColor : Color(.systemGray5))
+                            .foregroundColor(viewModel.isOverviewMode ? .white : .primary)
+                            .clipShape(Capsule())
+                    }
+                }
+                .padding(.horizontal)
+                
+                Picker("Concept", selection: Binding(
+                    get: { viewModel.patternType },
+                    set: { viewModel.setPatternType($0) }
+                )) {
+                    ForEach(RSOGConceptInfo.allConcepts, id: \.self) { type in
+                        Text(RSOGConceptInfo.title(for: type)).tag(type)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                
+                Text(viewModel.isOverviewMode
+                      ? "Overview: HEAD → BRIDGE → TRIPLE with the spiral path of all correct notes."
+                      : RSOGConceptInfo.shortDescription(for: viewModel.patternType))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            
             // Key selector
             HStack {
                 Text("Key:")
@@ -46,167 +92,135 @@ struct FretboardView: View {
             }
             .padding(.horizontal)
             
-            // Pattern type selector
-            HStack {
-                Text("Pattern:")
-                Picker("Pattern Type", selection: $viewModel.patternType) {
-                    Text("Spiral Mapping").tag(PatternType.spiralMapping)
-                    Text("Jumping").tag(PatternType.jumping)
-                    Text("Family of Chords").tag(PatternType.familyOfChords)
-                    Text("Familial Hierarchy").tag(PatternType.familialHierarchy)
+            // Block legend + toggles
+            VStack(spacing: 8) {
+                RSOGBlockLegendView(selectedTypes: viewModel.selectedBlockTypes, compact: true)
+                
+                HStack(spacing: 12) {
+                    BlockToggleButton(
+                        title: "HEAD",
+                        isSelected: viewModel.selectedBlockTypes.contains(.headBlock),
+                        color: RSOGPalette.blockColor(.headBlock)
+                    ) {
+                        viewModel.toggleBlock(.headBlock)
+                    }
+                    
+                    BlockToggleButton(
+                        title: "BRIDGE",
+                        isSelected: viewModel.selectedBlockTypes.contains(.bridgeBlock),
+                        color: RSOGPalette.blockColor(.bridgeBlock)
+                    ) {
+                        viewModel.toggleBlock(.bridgeBlock)
+                    }
+                    
+                    BlockToggleButton(
+                        title: "TRIPLE",
+                        isSelected: viewModel.selectedBlockTypes.contains(.tripleBlock),
+                        color: RSOGPalette.blockColor(.tripleBlock)
+                    ) {
+                        viewModel.toggleBlock(.tripleBlock)
+                    }
                 }
-                .pickerStyle(.menu)
-                .onChange(of: viewModel.patternType) { _, newType in
-                    viewModel.setPatternType(newType)
+                .padding(.horizontal)
+                
+                if let groups = viewModel.selectedPattern?.chordGroups, !groups.isEmpty {
+                    RSOGChordLegendView(groups: groups)
                 }
             }
-            .padding(.horizontal)
             
-            // Toggle pattern overlay
-            Toggle("Show Pattern Overlay", isOn: $viewModel.showPatternOverlay)
-                .padding(.horizontal)
-                .onChange(of: viewModel.showPatternOverlay) { _, _ in
-                    viewModel.togglePatternOverlay()
-                }
-            
-            // Block controls
-            VStack(spacing: 8) {
-                Toggle("Show Blocks", isOn: $viewModel.showBlocks)
-                    .padding(.horizontal)
-                    .onChange(of: viewModel.showBlocks) { _, _ in
-                        viewModel.toggleBlocks()
-                    }
-                
-                if viewModel.showBlocks {
-                    Toggle("Show Full Pattern", isOn: $viewModel.showFullPattern)
-                        .padding(.horizontal)
-                        .onChange(of: viewModel.showFullPattern) { _, _ in
-                            viewModel.toggleFullPattern()
+            DisclosureGroup("More controls", isExpanded: $showAdvancedControls) {
+                VStack(spacing: 10) {
+                    Toggle("Show Pattern Overlay", isOn: Binding(
+                        get: { viewModel.showPatternOverlay },
+                        set: { viewModel.setShowPatternOverlay($0) }
+                    ))
+                    
+                    Toggle("Show Blocks", isOn: Binding(
+                        get: { viewModel.showBlocks },
+                        set: { viewModel.setShowBlocks($0) }
+                    ))
+                    
+                    Toggle("Show Full Diatonic Pattern", isOn: $viewModel.showFullPattern)
+                        .onChange(of: viewModel.showFullPattern) { _, newValue in
+                            if newValue { viewModel.updateDiatonicPattern() }
+                            viewModel.isOverviewMode = false
                         }
                     
-                    Toggle("Show Infinite Bass Pattern", isOn: $viewModel.showInfiniteBassPattern)
-                        .padding(.horizontal)
-                        .onChange(of: viewModel.showInfiniteBassPattern) { _, _ in
-                            viewModel.toggleInfiniteBassPattern()
+                    Toggle("Show Infinite Bass Pattern", isOn: Binding(
+                        get: { viewModel.showInfiniteBassPattern },
+                        set: { newValue in
+                            if newValue != viewModel.showInfiniteBassPattern {
+                                viewModel.toggleInfiniteBassPattern()
+                            }
                         }
+                    ))
                     
                     if viewModel.showInfiniteBassPattern {
                         HStack(spacing: 12) {
-                            Button("←") {
-                                viewModel.shiftPattern(fretDelta: -1, stringDelta: 0)
-                            }
-                            Button("→") {
-                                viewModel.shiftPattern(fretDelta: 1, stringDelta: 0)
-                            }
-                            Button("↑") {
-                                viewModel.shiftPattern(fretDelta: 0, stringDelta: 1)
-                            }
-                            Button("↓") {
-                                viewModel.shiftPattern(fretDelta: 0, stringDelta: -1)
-                            }
-                            Text("Shift Pattern")
-                                .font(.caption)
+                            Button("←") { viewModel.shiftPattern(fretDelta: -1, stringDelta: 0) }
+                            Button("→") { viewModel.shiftPattern(fretDelta: 1, stringDelta: 0) }
+                            Button("↑") { viewModel.shiftPattern(fretDelta: 0, stringDelta: 1) }
+                            Button("↓") { viewModel.shiftPattern(fretDelta: 0, stringDelta: -1) }
+                            Text("Shift Pattern").font(.caption)
                         }
-                        .padding(.horizontal)
                     }
                     
-                    HStack(spacing: 16) {
-                        BlockToggleButton(
-                            title: "HEAD",
-                            isSelected: viewModel.selectedBlockTypes.contains(.headBlock),
-                            color: RSOGPalette.blockColor(.headBlock)
-                        ) {
-                            viewModel.toggleBlock(.headBlock)
-                        }
-                        
-                        BlockToggleButton(
-                            title: "BRIDGE",
-                            isSelected: viewModel.selectedBlockTypes.contains(.bridgeBlock),
-                            color: RSOGPalette.blockColor(.bridgeBlock)
-                        ) {
-                            viewModel.toggleBlock(.bridgeBlock)
-                        }
-                        
-                        BlockToggleButton(
-                            title: "TRIPLE",
-                            isSelected: viewModel.selectedBlockTypes.contains(.tripleBlock),
-                            color: RSOGPalette.blockColor(.tripleBlock)
-                        ) {
-                            viewModel.toggleBlock(.tripleBlock)
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-            }
-            
-            // CAGED controls (independent of blocks)
-            VStack(spacing: 8) {
-                Toggle("Show CAGED", isOn: $viewModel.showCAGED)
-                    .padding(.horizontal)
-                    .onChange(of: viewModel.showCAGED) { _, _ in
-                        viewModel.toggleCAGED()
-                    }
-                
-                if viewModel.showCAGED {
-                    HStack(spacing: 12) {
-                        ForEach(CAGEDForm.allCases, id: \.self) { form in
-                            BlockToggleButton(
-                                title: form.rawValue,
-                                isSelected: viewModel.selectedCAGEDForms.contains(form),
-                                color: .purple
-                            ) {
-                                viewModel.toggleCAGEDForm(form)
+                    Toggle("Show CAGED", isOn: Binding(
+                        get: { viewModel.showCAGED },
+                        set: { newValue in
+                            if newValue != viewModel.showCAGED {
+                                viewModel.toggleCAGED()
                             }
                         }
-                    }
-                    .padding(.horizontal)
-                }
-            }
-            
-            // Mode controls
-            VStack(spacing: 8) {
-                Toggle("Show Modes", isOn: $viewModel.showModes)
-                    .padding(.horizontal)
-                    .onChange(of: viewModel.showModes) { _, _ in
-                        viewModel.toggleModes()
-                    }
-                
-                if viewModel.showModes {
-                    // Mode selector
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(Mode.allCases, id: \.self) { mode in
-                                ModeToggleButton(
-                                    mode: mode,
-                                    isSelected: viewModel.selectedMode == mode
+                    ))
+                    
+                    if viewModel.showCAGED {
+                        HStack(spacing: 12) {
+                            ForEach(CAGEDForm.allCases, id: \.self) { form in
+                                BlockToggleButton(
+                                    title: form.rawValue,
+                                    isSelected: viewModel.selectedCAGEDForms.contains(form),
+                                    color: .purple
                                 ) {
-                                    viewModel.selectMode(mode)
+                                    viewModel.toggleCAGEDForm(form)
                                 }
                             }
                         }
-                        .padding(.horizontal)
                     }
                     
-                    // Mode info
-                    if let shape = viewModel.modeShape {
-                        VStack(spacing: 4) {
-                            HStack {
-                                Text("\(viewModel.selectedKey.rootNote.rawValue) \(viewModel.selectedMode.rawValue)")
-                                    .font(.headline)
-                                    .foregroundColor(.purple)
-                                Text("(\(viewModel.selectedMode.quality))")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                    Toggle("Show Modes", isOn: Binding(
+                        get: { viewModel.showModes },
+                        set: { newValue in
+                            if newValue != viewModel.showModes {
+                                viewModel.toggleModes()
                             }
-                            Text(shape.description)
+                        }
+                    ))
+                    
+                    if viewModel.showModes {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(Mode.allCases, id: \.self) { mode in
+                                    ModeToggleButton(
+                                        mode: mode,
+                                        isSelected: viewModel.selectedMode == mode
+                                    ) {
+                                        viewModel.selectMode(mode)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if let shape = viewModel.modeShape {
+                            Text("\(viewModel.selectedKey.rootNote.rawValue) \(viewModel.selectedMode.rawValue) — \(shape.description)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
                         }
-                        .padding(.horizontal)
                     }
                 }
+                .padding(.top, 4)
             }
+            .padding(.horizontal)
             
             // Sound controls
             HStack(spacing: 16) {
@@ -633,9 +647,36 @@ struct FretboardView: View {
             stringSpacing: stringSpacing,
             labelOffset: 24
         )
+        
+        // Prefer inspecting a block when the tap lands on a block note.
+        if viewModel.showBlocks, let block = blockAt(location: location, layout: layout) {
+            viewModel.inspectBlock(block)
+            return
+        }
+        
         guard let hit = layout.hitTest(at: location) else { return }
         let note = viewModel.getNoteAt(string: hit.string, fret: hit.fret)
         viewModel.selectPosition(FretboardPosition(string: hit.string, fret: hit.fret, note: note))
+    }
+    
+    private func blockAt(location: CGPoint, layout: FretboardLayout) -> Block? {
+        let hitRadius: CGFloat = 14
+        var best: (block: Block, distance: CGFloat)?
+        
+        for block in viewModel.blocks {
+            guard viewModel.selectedBlockTypes.contains(block.type) else { continue }
+            let offset = viewModel.getBlockOffset(block.id)
+            for position in block.positions {
+                let p = layout.point(for: position, offset: offset)
+                let distance = hypot(location.x - p.x, location.y - p.y)
+                if distance <= hitRadius {
+                    if best == nil || distance < best!.distance {
+                        best = (block, distance)
+                    }
+                }
+            }
+        }
+        return best?.block
     }
     
     private func handleDragChanged(_ value: DragGesture.Value, fretWidth: CGFloat, stringSpacing: CGFloat) {

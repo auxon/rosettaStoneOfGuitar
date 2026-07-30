@@ -9,11 +9,15 @@ import SwiftUI
 
 struct PatternView: View {
     let pattern: Pattern
+    var initialShowBlocks: Bool = false
+    var initialBlockTypes: Set<BlockType> = []
+    
     @State private var fretWidth: CGFloat = 40
     @State private var stringSpacing: CGFloat = 30
     @State private var selectedPosition: FretboardPosition?
     @State private var showBlocks: Bool = false
     @State private var selectedBlockTypes: Set<BlockType> = []
+    @State private var didApplyInitialBlocks = false
     
     private let audioService = AudioService.shared
     private let maxDisplayFret = 12
@@ -53,14 +57,20 @@ struct PatternView: View {
             .padding(.horizontal)
             
             if !pattern.chordGroups.isEmpty {
-                chordLegend
+                RSOGChordLegendView(groups: pattern.chordGroups)
+            }
+            
+            if showBlocks || !selectedBlockTypes.isEmpty {
+                RSOGBlockLegendView(selectedTypes: selectedBlockTypes, compact: true)
             }
             
             Toggle("Show Blocks", isOn: $showBlocks)
                 .padding(.horizontal)
                 .onChange(of: showBlocks) { _, newValue in
                     if newValue && selectedBlockTypes.isEmpty {
-                        selectedBlockTypes = [.headBlock, .bridgeBlock, .tripleBlock]
+                        selectedBlockTypes = initialBlockTypes.isEmpty
+                            ? RSOGConceptInfo.demoBlocks(for: pattern.type)
+                            : initialBlockTypes
                     } else if !newValue {
                         selectedBlockTypes.removeAll()
                     }
@@ -111,29 +121,19 @@ struct PatternView: View {
                 .padding()
             }
         }
+        .onAppear {
+            applyInitialBlocksIfNeeded()
+        }
     }
     
-    private var chordLegend: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                ForEach(pattern.chordGroups) { group in
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(RSOGPalette.color(for: group))
-                            .frame(width: 10, height: 10)
-                        Text(group.romanNumeral)
-                            .font(.caption.weight(.semibold))
-                        Text(group.root.rawValue)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(RSOGPalette.color(for: group).opacity(0.15))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                }
-            }
-            .padding(.horizontal)
+    private func applyInitialBlocksIfNeeded() {
+        guard !didApplyInitialBlocks else { return }
+        didApplyInitialBlocks = true
+        if initialShowBlocks {
+            showBlocks = true
+            selectedBlockTypes = initialBlockTypes.isEmpty
+                ? RSOGConceptInfo.demoBlocks(for: pattern.type)
+                : initialBlockTypes
         }
     }
     
