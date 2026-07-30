@@ -734,14 +734,93 @@ struct FretboardView: View {
     
     private func drawPatternOverlay(context: GraphicsContext, size: CGSize, fretWidth: CGFloat, stringSpacing: CGFloat) {
         let labelOffset: CGFloat = 24
+        let pattern = viewModel.selectedPattern
+        
+        // Draw musical connections (spiral / triad / hierarchy)
+        if let pattern, !pattern.connections.isEmpty {
+            for connection in pattern.connections {
+                let from = CGPoint(
+                    x: CGFloat(connection.fromFret) * fretWidth + fretWidth / 2 + labelOffset,
+                    y: (CGFloat(connection.fromString - 1) + 0.5) * stringSpacing
+                )
+                let to = CGPoint(
+                    x: CGFloat(connection.toFret) * fretWidth + fretWidth / 2 + labelOffset,
+                    y: (CGFloat(connection.toString - 1) + 0.5) * stringSpacing
+                )
+                var path = Path()
+                path.move(to: from)
+                path.addLine(to: to)
+                context.stroke(
+                    path,
+                    with: .color(RSOGPalette.connectionColor(for: connection.kind)),
+                    lineWidth: 2
+                )
+            }
+        }
+        
+        // Chord-group aware coloring when available
+        if let pattern, !pattern.chordGroups.isEmpty {
+            for group in pattern.chordGroups {
+                let color = RSOGPalette.color(for: group)
+                for position in group.positions {
+                    let x = CGFloat(position.fret) * fretWidth + fretWidth / 2 + labelOffset
+                    let y = (CGFloat(position.string - 1) + 0.5) * stringSpacing
+                    let radius: CGFloat = (position.isTriadRoot || position.isRoot) ? 12 : 8
+                    
+                    context.fill(
+                        Path(ellipseIn: CGRect(
+                            x: x - radius,
+                            y: y - radius,
+                            width: radius * 2,
+                            height: radius * 2
+                        )),
+                        with: .color(color.opacity(0.85))
+                    )
+                    context.stroke(
+                        Path(ellipseIn: CGRect(
+                            x: x - radius,
+                            y: y - radius,
+                            width: radius * 2,
+                            height: radius * 2
+                        )),
+                        with: .color(.white.opacity(0.7)),
+                        lineWidth: 1
+                    )
+                }
+                
+                if let labelPos = group.positions
+                    .filter({ $0.isTriadRoot || $0.isRoot })
+                    .sorted(by: { $0.fret < $1.fret })
+                    .first
+                {
+                    let x = CGFloat(labelPos.fret) * fretWidth + fretWidth / 2 + labelOffset
+                    let y = (CGFloat(labelPos.string - 1) + 0.5) * stringSpacing - 18
+                    let width = CGFloat(max(20, group.romanNumeral.count * 8))
+                    let rect = CGRect(x: x - width / 2, y: y - 8, width: width, height: 16)
+                    var bg = Path()
+                    bg.addRoundedRect(in: rect, cornerSize: CGSize(width: 4, height: 4))
+                    context.fill(bg, with: .color(color.opacity(0.95)))
+                    let text = Text(group.romanNumeral)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                    context.draw(text, at: CGPoint(x: x, y: y))
+                }
+            }
+            return
+        }
+        
         for position in viewModel.highlightedPositions {
             let x = CGFloat(position.fret) * fretWidth + fretWidth / 2 + labelOffset
             let y = (CGFloat(position.string - 1) + 0.5) * stringSpacing
             
-            // Bright colors for dark mode visibility
-            let rootColor = Color(red: 0.3, green: 0.7, blue: 1.0)  // Bright blue for root
-            let noteColor = Color(red: 0.3, green: 0.9, blue: 0.4)  // Bright green for other notes
-            let color: Color = position.isRoot ? rootColor : noteColor
+            let color: Color = {
+                if let role = position.chordRole {
+                    return RSOGPalette.color(for: role)
+                }
+                return position.isRoot
+                    ? Color(red: 0.3, green: 0.7, blue: 1.0)
+                    : Color(red: 0.3, green: 0.9, blue: 0.4)
+            }()
             let radius: CGFloat = position.isRoot ? 12 : 8
             
             context.fill(

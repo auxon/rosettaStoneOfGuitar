@@ -36,11 +36,24 @@ struct ConceptView: View {
             
             // Description
             if let pattern = viewModel.currentPattern {
-                Text(pattern.description)
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(10)
-                    .padding()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(pattern.description)
+                    if !pattern.chordGroups.isEmpty {
+                        Text("Chords: " + pattern.chordGroups.map(\.romanNumeral).joined(separator: " · "))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    if !pattern.connections.isEmpty {
+                        Text("\(pattern.connections.count) path connections")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.systemGray6))
+                .cornerRadius(10)
+                .padding()
             }
             
             // Controls

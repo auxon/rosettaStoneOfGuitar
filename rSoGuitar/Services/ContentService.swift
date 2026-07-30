@@ -147,14 +147,14 @@ class ContentService {
         // 4. Family of Chords (Premium)
         let familyPattern = PatternGenerator.familyOfChordsPattern(for: .C)
         let familyContent: [LessonContent] = [
-            .text("The Family of Chords shows all available chord positions horizontally across the fretboard for a given key."),
-            .text("In any key, certain chords naturally belong together. The Family of Chords helps you see where these related chords are located."),
+            .text("The Family of Chords shows the primary chords of a key (I, IV, V) as triad voicings laid out horizontally across the fretboard."),
+            .text("In any key, these chords naturally belong together. Each color marks a chord; lines connect the 1–3–5 tones within each voicing."),
             .fretboardDemo(familyPattern),
-            .text("The pattern above shows all the primary chord positions (I, IV, V) in the key of C major. These are the most important chords in any major key."),
+            .text("The pattern above shows I, IV, and V triad shapes in C major (C, F, G). Roman numeral labels mark each chord family member."),
             .text("Understanding chord families is essential for rhythm playing and accompaniment."),
             .exercise(Exercise(
                 title: "Family of Chords Practice",
-                instructions: "Explore the chord positions shown above. Notice how they're distributed horizontally across the fretboard. Try to identify the root notes (blue circles) for each chord.",
+                instructions: "Explore the triad voicings above. Identify I (blue), IV (green), and V (orange). Notice how each voicing is a compact 1–3–5 stack.",
                 pattern: familyPattern
             ))
         ]
@@ -171,14 +171,14 @@ class ContentService {
         // 5. Familial Hierarchy (Premium)
         let hierarchyPattern = PatternGenerator.familialHierarchyPattern(for: .C)
         let hierarchyContent: [LessonContent] = [
-            .text("Familial Hierarchy shows the natural chord progression order in a key. It displays chords vertically, showing their relative importance."),
-            .text("The hierarchy follows the circle of fifths and shows which chords naturally lead to others in a progression."),
+            .text("Familial Hierarchy shows every diatonic chord in the key as a vertical 1–3–5 triad stack, labeled by roman numeral."),
+            .text("Moving vertically across the pattern reveals the relative positions of I, ii, iii, IV, V, vi, and vii°."),
             .fretboardDemo(hierarchyPattern),
-            .text("The pattern above shows the complete chord hierarchy: I, ii, iii, IV, V, vi, and vii°. The I chord (blue) is the root, and the others follow in order of importance."),
+            .text("The pattern above shows the complete hierarchy. Each color is a scale degree; compact stacks emphasize the vertical relationships."),
             .text("Mastering familial hierarchy helps you understand song structure and create your own progressions."),
             .exercise(Exercise(
                 title: "Familial Hierarchy Practice",
-                instructions: "Study the hierarchy pattern. Notice how chords are arranged vertically. The most common progressions use I, IV, and V chords. Try creating a simple progression using these positions.",
+                instructions: "Study the vertical triad stacks. Find I, IV, and V first, then locate ii, iii, vi, and vii°. Notice how each is a 1–3–5 shape.",
                 pattern: hierarchyPattern
             ))
         ]

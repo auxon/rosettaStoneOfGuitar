@@ -407,8 +407,47 @@ enum RSOGTemplate {
         }
     }
     
+    /// All compact triad voicings for a degree across the fretboard.
+    static func allTriadVoicings(
+        for degree: RSOGScaleDegree,
+        key: Key,
+        maxFret: Int,
+        windowSize: Int = 4
+    ) -> [RSOGTriadVoicing] {
+        var results: [RSOGTriadVoicing] = []
+        var seen: Set<String> = []
+        
+        for startString in 1...(Constants.numberOfStrings - 2) {
+            let strings = [startString, startString + 1, startString + 2]
+            for startFret in 0...maxFret {
+                let end = min(maxFret, startFret + windowSize)
+                guard let voicing = findTriadVoicing(
+                    degree: degree,
+                    strings: strings,
+                    fretRange: startFret...end,
+                    key: key
+                ) else { continue }
+                
+                let keyStr = voicing.positions
+                    .map(\.coordinateKey)
+                    .sorted()
+                    .joined(separator: "|")
+                if seen.insert(keyStr).inserted {
+                    results.append(voicing)
+                }
+            }
+        }
+        
+        return results.sorted {
+            let a = $0.positions.map(\.fret).min() ?? 0
+            let b = $1.positions.map(\.fret).min() ?? 0
+            if a != b { return a < b }
+            return ($0.positions.map(\.string).min() ?? 0) < ($1.positions.map(\.string).min() ?? 0)
+        }
+    }
+    
     /// Find one close-position triad voicing: one chord tone on each of three strings.
-    private static func findTriadVoicing(
+    static func findTriadVoicing(
         degree: RSOGScaleDegree,
         strings: [Int],
         fretRange: ClosedRange<Int>,
