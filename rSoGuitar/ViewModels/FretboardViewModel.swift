@@ -173,8 +173,8 @@ class FretboardViewModel: ObservableObject {
     }
     
     func updateBlocks() {
-        // Start with triple block as default (can be changed to start from any block type)
-        blocks = BlockGenerator.allBlocks(for: selectedKey, maxFret: maxFret, startBlockType: .tripleBlock)
+        // Canonical rSoG sequence: HEAD → BRIDGE → TRIPLE (startBlockType rotates the order)
+        blocks = BlockGenerator.allBlocks(for: selectedKey, maxFret: maxFret, startBlockType: .headBlock)
     }
     
     func updateDiatonicPattern() {
@@ -326,7 +326,9 @@ class FretboardViewModel: ObservableObject {
                 description: rebuilt.description,
                 fretRange: rebuilt.fretRange,
                 stringRange: rebuilt.stringRange,
-                positions: rebuilt.positions
+                positions: rebuilt.positions,
+                anchorFret: rebuilt.anchorFret,
+                sequenceIndex: oldBlock.sequenceIndex
             )
         }
         

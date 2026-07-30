@@ -62,8 +62,22 @@ struct Block: Identifiable {
     let fretRange: ClosedRange<Int>
     let stringRange: ClosedRange<Int>  // Typically 1-6 for all strings
     let positions: [FretboardPosition]  // Notes in key that fall within this block
+    /// Anchor fret for the block's spacing template (lowest template fret).
+    let anchorFret: Int
+    /// Index in the HEAD → BRIDGE → TRIPLE repeating sequence (0-based).
+    let sequenceIndex: Int
     
-    init(id: UUID = UUID(), type: BlockType, name: String, description: String, fretRange: ClosedRange<Int>, stringRange: ClosedRange<Int>, positions: [FretboardPosition]) {
+    init(
+        id: UUID = UUID(),
+        type: BlockType,
+        name: String,
+        description: String,
+        fretRange: ClosedRange<Int>,
+        stringRange: ClosedRange<Int>,
+        positions: [FretboardPosition],
+        anchorFret: Int? = nil,
+        sequenceIndex: Int = 0
+    ) {
         self.id = id
         self.type = type
         self.name = name
@@ -71,6 +85,8 @@ struct Block: Identifiable {
         self.fretRange = fretRange
         self.stringRange = stringRange
         self.positions = positions
+        self.anchorFret = anchorFret ?? fretRange.lowerBound
+        self.sequenceIndex = sequenceIndex
     }
 }
 

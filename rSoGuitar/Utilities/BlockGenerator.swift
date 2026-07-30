@@ -2,9 +2,10 @@
 //  BlockGenerator.swift
 //  rSoGuitar
 //
-//  Generates block overlays for the fretboard based on rSoGuitar methodology
-//  The rSoGuitar method reveals that the entire fretboard is one repeating diatonic pattern
-//  containing HEAD, BRIDGE, and TRIPLE blocks that repeat in sequence.
+//  Generates block overlays for the fretboard based on rSoGuitar methodology.
+//  The entire fretboard is one repeating diatonic pattern containing
+//  HEAD (XX-X), BRIDGE (X-XX), and TRIPLE (stacked 1-3-5 triads) blocks
+//  that tile in sequence: HEAD → BRIDGE → TRIPLE → HEAD → …
 //
 
 import Foundation
@@ -13,30 +14,56 @@ struct BlockGenerator {
     
     // MARK: - Main Entry Point
     
-    /// Generate all blocks for a given key across the fretboard
-    /// Blocks repeat in sequence: HEAD → BRIDGE → TRIPLE → HEAD → BRIDGE → TRIPLE...
-    static func allBlocks(for key: Key, maxFret: Int = 24, startBlockType: BlockType = .tripleBlock) -> [Block] {
-        var allBlocks: [Block] = []
+    /// Generate all blocks for a given key across the fretboard.
+    /// Blocks are returned in canonical sequence order beginning at `startBlockType`.
+    static func allBlocks(
+        for key: Key,
+        maxFret: Int = 24,
+        startBlockType: BlockType = .headBlock
+    ) -> [Block] {
+        let headBlocks = buildHeadBlocks(for: key, maxFret: maxFret)
+        let bridgeBlocks = buildBridgeBlocks(for: key, maxFret: maxFret)
+        let tripleBlocks = buildTripleBlocks(for: key, maxFret: maxFret)
         
-        // Find all HEAD blocks
-        let headBlocks = findAllHeadBlocks(for: key, maxFret: maxFret)
-        allBlocks.append(contentsOf: headBlocks)
+        // Group by type for sequenced interleaving.
+        var byType: [BlockType: [Block]] = [
+            .headBlock: headBlocks,
+            .bridgeBlock: bridgeBlocks,
+            .tripleBlock: tripleBlocks
+        ]
         
-        // Find all BRIDGE blocks
-        let bridgeBlocks = findAllBridgeBlocks(for: key, maxFret: maxFret)
-        allBlocks.append(contentsOf: bridgeBlocks)
+        // Assign sequence indices following HEAD → BRIDGE → TRIPLE, rotated to startBlockType.
+        let order = RSOGTemplate.sequencedTypes(startingFrom: startBlockType)
+        var sequenced: [Block] = []
+        var sequenceIndex = 0
         
-        // Find all TRIPLE blocks
-        let tripleBlocks = findAllTripleBlocks(for: key, maxFret: maxFret)
-        allBlocks.append(contentsOf: tripleBlocks)
+        let maxCount = max(headBlocks.count, bridgeBlocks.count, tripleBlocks.count)
+        for i in 0..<maxCount {
+            for type in order {
+                guard var pool = byType[type], i < pool.count else { continue }
+                let block = pool[i]
+                let indexed = Block(
+                    id: block.id,
+                    type: block.type,
+                    name: block.name,
+                    description: block.description,
+                    fretRange: block.fretRange,
+                    stringRange: block.stringRange,
+                    positions: block.positions,
+                    anchorFret: block.anchorFret,
+                    sequenceIndex: sequenceIndex
+                )
+                sequenced.append(indexed)
+                sequenceIndex += 1
+            }
+        }
         
-        return allBlocks
+        return sequenced
     }
     
     // MARK: - Diatonic Pattern Generation
     
-    /// Generate the full diatonic pattern for a key
-    /// Returns all notes in the key across the fretboard
+    /// Generate the full diatonic pattern for a key.
     static func diatonicPattern(for key: Key, maxFret: Int = 24) -> [FretboardPosition] {
         let keyNotes = FretboardCalculator.notesInKey(key)
         var positions: [FretboardPosition] = []
@@ -58,305 +85,243 @@ struct BlockGenerator {
         return positions
     }
     
-    // MARK: - HEAD Block (XX-X pattern)
-    // HEAD blocks have 6 notes arranged as: two notes close, gap, one note - repeated on pairs of strings
-    // Pattern on fretboard: Two adjacent notes on one string, then one note on the next string (shifted)
+    // MARK: - HEAD Blocks (XX-X)
     
-    private static func findAllHeadBlocks(for key: Key, maxFret: Int) -> [Block] {
-        var blocks: [Block] = []
-        var foundBlockKeys: Set<String> = []
+    private static func buildHeadBlocks(for key: Key, maxFret: Int) -> [Block] {
+        let placements = RSOGTemplate.allHeadPlacements(for: key, maxFret: maxFret)
         
-        // Search for HEAD blocks starting from different positions
-        // HEAD blocks span 3 consecutive strings and typically 2-3 frets
-        for startString in 1...4 {  // Can start on strings 1-4 (need 3 strings)
-            for startFret in 0...maxFret {
-                if let block = identifyHeadBlockAt(
-                    startString: startString,
-                    startFret: startFret,
-                    key: key,
-                    maxFret: maxFret
-                ) {
-                    // Create a unique key for this block based on its positions
-                    let blockKey = block.positions.map { "\($0.string),\($0.fret)" }.sorted().joined(separator: "|")
-                    if !foundBlockKeys.contains(blockKey) {
-                        blocks.append(block)
-                        foundBlockKeys.insert(blockKey)
-                    }
-                }
-            }
+        // Prefer primary pair first, then others by anchor fret.
+        let primary = RSOGStringPairs.primaryHeadPair
+        let sorted = placements.sorted { lhs, rhs in
+            let leftPrimary = lhs.pair.0 == primary.0 && lhs.pair.1 == primary.1
+            let rightPrimary = rhs.pair.0 == primary.0 && rhs.pair.1 == primary.1
+            if leftPrimary != rightPrimary { return leftPrimary && !rightPrimary }
+            if lhs.anchor != rhs.anchor { return lhs.anchor < rhs.anchor }
+            return lhs.pair.0 < rhs.pair.0
         }
         
-        return blocks
+        return sorted.map { placement in
+            makeBlock(
+                type: .headBlock,
+                name: "HEAD",
+                description: "HEAD block: 6-note XX-X pattern on strings \(placement.pair.0)–\(placement.pair.1).",
+                positions: placement.positions,
+                anchorFret: placement.anchor
+            )
+        }
     }
     
-    private static func identifyHeadBlockAt(startString: Int, startFret: Int, key: Key, maxFret: Int) -> Block? {
-        let keyNotes = FretboardCalculator.notesInKey(key)
-        var positions: [FretboardPosition] = []
+    // MARK: - BRIDGE Blocks (X-XX)
+    
+    private static func buildBridgeBlocks(for key: Key, maxFret: Int) -> [Block] {
+        let placements = RSOGTemplate.allBridgePlacements(for: key, maxFret: maxFret)
         
-        // HEAD block pattern: XX-X on each pair of strings
-        // String 1 (relative): 2 notes at fret and fret+2 (or nearby diatonic positions)
-        // String 2 (relative): 2 notes
-        // String 3 (relative): 2 notes
-        // Total: 6 notes
-        
-        let strings = [startString, startString + 1, startString + 2]
-        guard strings.allSatisfy({ $0 >= 1 && $0 <= Constants.numberOfStrings }) else { return nil }
-        
-        // For each of the 3 strings, find 2 consecutive diatonic notes near the start fret
-        for string in strings {
-            var notesOnString: [FretboardPosition] = []
-            
-            // Search within a small fret range for diatonic notes
-            let searchRange = max(0, startFret - 1)...min(maxFret, startFret + 4)
-            for fret in searchRange {
-                let note = FretboardCalculator.noteAt(string: string, fret: fret)
-                if keyNotes.contains(note) {
-                    notesOnString.append(FretboardPosition(
-                        string: string,
-                        fret: fret,
-                        note: note,
-                        isRoot: note == key.rootNote
-                    ))
-                    if notesOnString.count >= 2 { break }  // Take first 2 diatonic notes
-                }
-            }
-            
-            positions.append(contentsOf: notesOnString)
+        let primary = RSOGStringPairs.primaryBridgePair
+        let sorted = placements.sorted { lhs, rhs in
+            let leftPrimary = lhs.pair.0 == primary.0 && lhs.pair.1 == primary.1
+            let rightPrimary = rhs.pair.0 == primary.0 && rhs.pair.1 == primary.1
+            if leftPrimary != rightPrimary { return leftPrimary && !rightPrimary }
+            if lhs.anchor != rhs.anchor { return lhs.anchor < rhs.anchor }
+            return lhs.pair.0 < rhs.pair.0
         }
         
-        // HEAD block needs exactly 6 notes (2 per string)
-        guard positions.count == 6 else { return nil }
+        return sorted.map { placement in
+            makeBlock(
+                type: .bridgeBlock,
+                name: "BRIDGE",
+                description: "BRIDGE block: 6-note X-XX pattern on strings \(placement.pair.0)–\(placement.pair.1).",
+                positions: placement.positions,
+                anchorFret: placement.anchor
+            )
+        }
+    }
+    
+    // MARK: - TRIPLE Blocks (X-X-X / three triads)
+    
+    private static func buildTripleBlocks(for key: Key, maxFret: Int) -> [Block] {
+        let placements = RSOGTemplate.allTriplePlacements(for: key, maxFret: maxFret)
         
-        // Verify the notes form a compact cluster (XX-X pattern)
-        let frets = positions.map { $0.fret }
-        let fretSpan = (frets.max() ?? 0) - (frets.min() ?? 0)
-        guard fretSpan <= 4 else { return nil }  // Should be within ~4 frets
+        let sorted = placements.sorted { lhs, rhs in
+            if lhs.startFret != rhs.startFret { return lhs.startFret < rhs.startFret }
+            return lhs.startString < rhs.startString
+        }
         
-        let minFret = frets.min() ?? 0
-        let maxFretFound = frets.max() ?? maxFret
+        return sorted.map { placement in
+            let numerals = placement.voicings.map(\.degree.romanNumeral).joined(separator: "–")
+            return makeBlock(
+                type: .tripleBlock,
+                name: "TRIPLE",
+                description: "TRIPLE block: stacked 1-3-5 triads (\(numerals)) on strings \(placement.startString)–\(placement.startString + 2).",
+                positions: placement.positions,
+                anchorFret: placement.startFret
+            )
+        }
+    }
+    
+    // MARK: - Block Factory
+    
+    private static func makeBlock(
+        type: BlockType,
+        name: String,
+        description: String,
+        positions: [FretboardPosition],
+        anchorFret: Int,
+        sequenceIndex: Int = 0
+    ) -> Block {
+        let frets = positions.map(\.fret)
+        let strings = positions.map(\.string)
+        let minFret = frets.min() ?? anchorFret
+        let maxFretFound = frets.max() ?? anchorFret
+        let minString = strings.min() ?? 1
+        let maxString = strings.max() ?? 1
         
         return Block(
-            type: .headBlock,
-            name: "HEAD",
-            description: "HEAD block: 6-note XX-X pattern containing scale degrees on 3 consecutive strings.",
+            type: type,
+            name: name,
+            description: description,
             fretRange: minFret...maxFretFound,
-            stringRange: strings.min()!...strings.max()!,
-            positions: positions
-        )
-    }
-    
-    // MARK: - BRIDGE Block (X-XX pattern)
-    // BRIDGE blocks have 6 notes arranged as: one note, gap, two notes close - repeated on pairs of strings
-    
-    private static func findAllBridgeBlocks(for key: Key, maxFret: Int) -> [Block] {
-        var blocks: [Block] = []
-        var foundBlockKeys: Set<String> = []
-        
-        for startString in 1...4 {
-            for startFret in 0...maxFret {
-                if let block = identifyBridgeBlockAt(
-                    startString: startString,
-                    startFret: startFret,
-                    key: key,
-                    maxFret: maxFret
-                ) {
-                    let blockKey = block.positions.map { "\($0.string),\($0.fret)" }.sorted().joined(separator: "|")
-                    if !foundBlockKeys.contains(blockKey) {
-                        blocks.append(block)
-                        foundBlockKeys.insert(blockKey)
-                    }
-                }
-            }
-        }
-        
-        return blocks
-    }
-    
-    private static func identifyBridgeBlockAt(startString: Int, startFret: Int, key: Key, maxFret: Int) -> Block? {
-        let keyNotes = FretboardCalculator.notesInKey(key)
-        var positions: [FretboardPosition] = []
-        
-        let strings = [startString, startString + 1, startString + 2]
-        guard strings.allSatisfy({ $0 >= 1 && $0 <= Constants.numberOfStrings }) else { return nil }
-        
-        // For BRIDGE, we look for the X-XX pattern
-        // Similar to HEAD but the grouping is different
-        for string in strings {
-            var notesOnString: [FretboardPosition] = []
-            
-            let searchRange = max(0, startFret - 1)...min(maxFret, startFret + 4)
-            for fret in searchRange {
-                let note = FretboardCalculator.noteAt(string: string, fret: fret)
-                if keyNotes.contains(note) {
-                    notesOnString.append(FretboardPosition(
-                        string: string,
-                        fret: fret,
-                        note: note,
-                        isRoot: note == key.rootNote
-                    ))
-                    if notesOnString.count >= 2 { break }
-                }
-            }
-            
-            positions.append(contentsOf: notesOnString)
-        }
-        
-        guard positions.count == 6 else { return nil }
-        
-        let frets = positions.map { $0.fret }
-        let fretSpan = (frets.max() ?? 0) - (frets.min() ?? 0)
-        guard fretSpan <= 4 else { return nil }
-        
-        let minFret = frets.min() ?? 0
-        let maxFretFound = frets.max() ?? maxFret
-        
-        return Block(
-            type: .bridgeBlock,
-            name: "BRIDGE",
-            description: "BRIDGE block: 6-note X-XX pattern connecting HEAD and TRIPLE blocks.",
-            fretRange: minFret...maxFretFound,
-            stringRange: strings.min()!...strings.max()!,
-            positions: positions
-        )
-    }
-    
-    // MARK: - TRIPLE Block (X-X-X pattern - three triads)
-    // TRIPLE blocks contain three 1-3-5 triads (9 notes total)
-    // Each triad spans 3 consecutive strings
-    
-    private static func findAllTripleBlocks(for key: Key, maxFret: Int) -> [Block] {
-        var blocks: [Block] = []
-        var foundBlockKeys: Set<String> = []
-        
-        // TRIPLE blocks need more strings since they contain 3 triads
-        for startString in 1...4 {
-            for startFret in 0...maxFret {
-                if let block = identifyTripleBlockAt(
-                    startString: startString,
-                    startFret: startFret,
-                    key: key,
-                    maxFret: maxFret
-                ) {
-                    let blockKey = block.positions.map { "\($0.string),\($0.fret)" }.sorted().joined(separator: "|")
-                    if !foundBlockKeys.contains(blockKey) {
-                        blocks.append(block)
-                        foundBlockKeys.insert(blockKey)
-                    }
-                }
-            }
-        }
-        
-        return blocks
-    }
-    
-    private static func identifyTripleBlockAt(startString: Int, startFret: Int, key: Key, maxFret: Int) -> Block? {
-        let root = key.rootNote
-        let third = root.addingSemitones(4)  // Major 3rd
-        let fifth = root.addingSemitones(7)  // Perfect 5th
-        let triadNotes: Set<Note> = [root, third, fifth]
-        
-        var positions: [FretboardPosition] = []
-        
-        let strings = [startString, startString + 1, startString + 2]
-        guard strings.allSatisfy({ $0 >= 1 && $0 <= Constants.numberOfStrings }) else { return nil }
-        
-        // Find triad notes (root, 3rd, 5th) on each string
-        for string in strings {
-            var notesOnString: [FretboardPosition] = []
-            
-            let searchRange = max(0, startFret - 1)...min(maxFret, startFret + 5)
-            for fret in searchRange {
-                let note = FretboardCalculator.noteAt(string: string, fret: fret)
-                if triadNotes.contains(note) {
-                    notesOnString.append(FretboardPosition(
-                        string: string,
-                        fret: fret,
-                        note: note,
-                        isRoot: note == root
-                    ))
-                    if notesOnString.count >= 3 { break }  // Up to 3 triad notes per string
-                }
-            }
-            
-            positions.append(contentsOf: notesOnString)
-        }
-        
-        // TRIPLE block needs at least 6 notes (2 triads), prefer 9 (3 triads)
-        guard positions.count >= 6 else { return nil }
-        
-        // Verify we have a mix of root, 3rd, and 5th
-        let hasRoot = positions.contains { $0.note == root }
-        let hasThird = positions.contains { $0.note == third }
-        let hasFifth = positions.contains { $0.note == fifth }
-        guard hasRoot && hasThird && hasFifth else { return nil }
-        
-        let frets = positions.map { $0.fret }
-        let fretSpan = (frets.max() ?? 0) - (frets.min() ?? 0)
-        guard fretSpan <= 5 else { return nil }
-        
-        let minFret = frets.min() ?? 0
-        let maxFretFound = frets.max() ?? maxFret
-        
-        return Block(
-            type: .tripleBlock,
-            name: "TRIPLE",
-            description: "TRIPLE block: \(positions.count)-note X-X-X pattern containing stacked 1-3-5 triads.",
-            fretRange: minFret...maxFretFound,
-            stringRange: strings.min()!...strings.max()!,
-            positions: positions
+            stringRange: minString...maxString,
+            positions: positions,
+            anchorFret: anchorFret,
+            sequenceIndex: sequenceIndex
         )
     }
     
     // MARK: - Public Block Identification (for dragging)
     
-    /// Identify HEAD block starting from a given position
+    /// Identify HEAD block starting from a given position.
     static func identifyHeadBlock(
         startingFrom startPos: FretboardPosition,
         patternMap: [String: FretboardPosition],
         key: Key,
         maxFret: Int
     ) -> Block? {
-        return identifyHeadBlockAt(
-            startString: max(1, startPos.string - 1),
-            startFret: startPos.fret,
+        identifySpacingBlock(
+            type: .headBlock,
+            nearString: startPos.string,
+            nearFret: startPos.fret,
             key: key,
             maxFret: maxFret
         )
     }
     
-    /// Identify BRIDGE block starting from a given position
+    /// Identify BRIDGE block starting from a given position.
     static func identifyBridgeBlock(
         startingFrom startPos: FretboardPosition,
         patternMap: [String: FretboardPosition],
         key: Key,
         maxFret: Int
     ) -> Block? {
-        return identifyBridgeBlockAt(
-            startString: max(1, startPos.string - 1),
-            startFret: startPos.fret,
+        identifySpacingBlock(
+            type: .bridgeBlock,
+            nearString: startPos.string,
+            nearFret: startPos.fret,
             key: key,
             maxFret: maxFret
         )
     }
     
-    /// Identify TRIPLE block starting from a given position
+    /// Identify TRIPLE block starting from a given position.
     static func identifyTripleBlock(
         startingFrom startPos: FretboardPosition,
         patternMap: [String: FretboardPosition],
         key: Key,
         maxFret: Int
     ) -> Block? {
-        return identifyTripleBlockAt(
-            startString: max(1, startPos.string - 1),
+        let startString = min(max(1, startPos.string), Constants.numberOfStrings - 2)
+        if let found = RSOGTemplate.tripleBlock(
+            atStartString: startString,
             startFret: startPos.fret,
             key: key,
             maxFret: maxFret
+        ) {
+            let numerals = found.voicings.map(\.degree.romanNumeral).joined(separator: "–")
+            return makeBlock(
+                type: .tripleBlock,
+                name: "TRIPLE",
+                description: "TRIPLE block: stacked 1-3-5 triads (\(numerals)).",
+                positions: found.positions,
+                anchorFret: startPos.fret
+            )
+        }
+        
+        // Fallback: nearest triple placement.
+        let placements = RSOGTemplate.allTriplePlacements(for: key, maxFret: maxFret)
+        guard let nearest = placements.min(by: {
+            abs($0.startFret - startPos.fret) + abs($0.startString - startString)
+            < abs($1.startFret - startPos.fret) + abs($1.startString - startString)
+        }) else { return nil }
+        
+        let numerals = nearest.voicings.map(\.degree.romanNumeral).joined(separator: "–")
+        return makeBlock(
+            type: .tripleBlock,
+            name: "TRIPLE",
+            description: "TRIPLE block: stacked 1-3-5 triads (\(numerals)).",
+            positions: nearest.positions,
+            anchorFret: nearest.startFret
         )
+    }
+    
+    private static func identifySpacingBlock(
+        type: BlockType,
+        nearString: Int,
+        nearFret: Int,
+        key: Key,
+        maxFret: Int
+    ) -> Block? {
+        guard let template = RSOGBlockTemplate.template(for: type),
+              let offsets = RSOGSpacingPattern.offsets(for: type) else { return nil }
+        
+        // Prefer a string pair that contains nearString.
+        let candidatePairs = RSOGStringPairs.perfectFourthPairs.filter {
+            $0.0 == nearString || $0.1 == nearString
+        } + RSOGStringPairs.perfectFourthPairs
+        
+        var seen: Set<String> = []
+        var uniquePairs: [(Int, Int)] = []
+        for pair in candidatePairs {
+            let key = "\(pair.0)-\(pair.1)"
+            if seen.insert(key).inserted {
+                uniquePairs.append(pair)
+            }
+        }
+        
+        for pair in uniquePairs {
+            let anchors = RSOGTemplate.spacingAnchors(
+                offsets: offsets,
+                stringPair: pair,
+                key: key,
+                maxFret: maxFret
+            )
+            
+            // Prefer anchor at/near the requested fret.
+            let sortedAnchors = anchors.sorted { abs($0 - nearFret) < abs($1 - nearFret) }
+            for anchor in sortedAnchors {
+                if let positions = RSOGTemplate.positions(
+                    for: template,
+                    baseString: pair.0,
+                    anchorFret: anchor,
+                    key: key
+                ) {
+                    let name = type == .headBlock ? "HEAD" : "BRIDGE"
+                    let patternName = type == .headBlock ? "XX-X" : "X-XX"
+                    return makeBlock(
+                        type: type,
+                        name: name,
+                        description: "\(name) block: 6-note \(patternName) pattern on strings \(pair.0)–\(pair.1).",
+                        positions: positions,
+                        anchorFret: anchor
+                    )
+                }
+            }
+        }
+        
+        return nil
     }
     
     // MARK: - Infinite Bass Pattern
     
-    /// Generate infinite bass pattern that extends beyond the 6 strings
+    /// Generate infinite bass pattern that extends beyond the 6 strings.
     static func infiniteBassPattern(
         for key: Key,
         maxFret: Int = 24,
@@ -402,44 +367,72 @@ struct BlockGenerator {
         return positions
     }
     
-    // MARK: - Legacy Functions (kept for compatibility)
+    // MARK: - Convenience: First Canonical Instance
     
-    /// Generate HEAD block using the legacy approach
+    /// Primary HEAD block for the key (e–B XX-X at lowest valid anchor).
     static func headBlock(for key: Key, maxFret: Int = 12) -> Block {
-        let blocks = findAllHeadBlocks(for: key, maxFret: maxFret)
-        return blocks.first ?? Block(
+        if let primary = RSOGTemplate.primaryHead(for: key, maxFret: maxFret) {
+            return makeBlock(
+                type: .headBlock,
+                name: "HEAD",
+                description: "HEAD block: 6-note XX-X pattern on strings 1–2.",
+                positions: primary.positions,
+                anchorFret: primary.anchor
+            )
+        }
+        return Block(
             type: .headBlock,
             name: "HEAD",
             description: "HEAD block not found for this key.",
-            fretRange: 0...4,
-            stringRange: 1...3,
-            positions: []
+            fretRange: 0...3,
+            stringRange: 1...2,
+            positions: [],
+            anchorFret: 0
         )
     }
     
-    /// Generate BRIDGE block using the legacy approach
+    /// Primary BRIDGE block for the key (D–A X-XX at lowest valid anchor).
     static func bridgeBlock(for key: Key, maxFret: Int = 12) -> Block {
-        let blocks = findAllBridgeBlocks(for: key, maxFret: maxFret)
-        return blocks.first ?? Block(
+        if let primary = RSOGTemplate.primaryBridge(for: key, maxFret: maxFret) {
+            return makeBlock(
+                type: .bridgeBlock,
+                name: "BRIDGE",
+                description: "BRIDGE block: 6-note X-XX pattern on strings 4–5.",
+                positions: primary.positions,
+                anchorFret: primary.anchor
+            )
+        }
+        return Block(
             type: .bridgeBlock,
             name: "BRIDGE",
             description: "BRIDGE block not found for this key.",
-            fretRange: 2...7,
+            fretRange: 0...3,
             stringRange: 4...5,
-            positions: []
+            positions: [],
+            anchorFret: 0
         )
     }
     
-    /// Generate TRIPLE block using the legacy approach
+    /// Primary TRIPLE block for the key (three stacked diatonic triads).
     static func tripleBlock(for key: Key, maxFret: Int = 12) -> Block {
-        let blocks = findAllTripleBlocks(for: key, maxFret: maxFret)
-        return blocks.first ?? Block(
+        if let primary = RSOGTemplate.primaryTriple(for: key, maxFret: maxFret) {
+            let numerals = primary.voicings.map(\.degree.romanNumeral).joined(separator: "–")
+            return makeBlock(
+                type: .tripleBlock,
+                name: "TRIPLE",
+                description: "TRIPLE block: stacked 1-3-5 triads (\(numerals)).",
+                positions: primary.positions,
+                anchorFret: primary.startFret
+            )
+        }
+        return Block(
             type: .tripleBlock,
             name: "TRIPLE",
             description: "TRIPLE block not found for this key.",
             fretRange: 0...5,
-            stringRange: 1...6,
-            positions: []
+            stringRange: 3...5,
+            positions: [],
+            anchorFret: 0
         )
     }
 }
