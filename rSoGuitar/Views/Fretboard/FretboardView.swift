@@ -11,26 +11,72 @@ struct FretboardView: View {
     @StateObject private var viewModel = FretboardViewModel()
     @State private var fretWidth: CGFloat = 40
     @State private var stringSpacing: CGFloat = 30
+    @State private var showAdvancedControls = false
     
     var body: some View {
         VStack(spacing: 0) {
-            // Controls
-            controlsView
+            ScrollView {
+                controlsView
+            }
+            .frame(maxHeight: showAdvancedControls ? 360 : 220)
             
             // Fretboard
             ScrollView([.horizontal, .vertical], showsIndicators: true) {
                 fretboardCanvas
-                    .frame(minWidth: CGFloat(viewModel.maxFret + 1) * fretWidth + 24, // Add space for string labels
+                    .frame(minWidth: CGFloat(viewModel.maxFret + 1) * fretWidth + 24,
                            minHeight: CGFloat(Constants.numberOfStrings) * stringSpacing)
                     .padding()
             }
         }
         .navigationTitle("Fretboard Explorer")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $viewModel.inspectedBlock) { block in
+            BlockDetailSheet(block: block)
+        }
     }
     
     private var controlsView: some View {
         VStack(spacing: 12) {
+            // RSOG concept picker — front and center
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("rSoG Concept")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Button {
+                        viewModel.enableOverviewMode()
+                    } label: {
+                        Label("Overview", systemImage: "square.3.layers.3d")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(viewModel.isOverviewMode ? Color.accentColor : Color(.systemGray5))
+                            .foregroundColor(viewModel.isOverviewMode ? .white : .primary)
+                            .clipShape(Capsule())
+                    }
+                }
+                .padding(.horizontal)
+                
+                Picker("Concept", selection: Binding(
+                    get: { viewModel.patternType },
+                    set: { viewModel.setPatternType($0) }
+                )) {
+                    ForEach(RSOGConceptInfo.allConcepts, id: \.self) { type in
+                        Text(RSOGConceptInfo.title(for: type)).tag(type)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                
+                Text(viewModel.isOverviewMode
+                      ? "Overview: HEAD → BRIDGE → TRIPLE with the spiral path of all correct notes."
+                      : RSOGConceptInfo.shortDescription(for: viewModel.patternType))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            
             // Key selector
             HStack {
                 Text("Key:")
@@ -46,167 +92,135 @@ struct FretboardView: View {
             }
             .padding(.horizontal)
             
-            // Pattern type selector
-            HStack {
-                Text("Pattern:")
-                Picker("Pattern Type", selection: $viewModel.patternType) {
-                    Text("Spiral Mapping").tag(PatternType.spiralMapping)
-                    Text("Jumping").tag(PatternType.jumping)
-                    Text("Family of Chords").tag(PatternType.familyOfChords)
-                    Text("Familial Hierarchy").tag(PatternType.familialHierarchy)
+            // Block legend + toggles
+            VStack(spacing: 8) {
+                RSOGBlockLegendView(selectedTypes: viewModel.selectedBlockTypes, compact: true)
+                
+                HStack(spacing: 12) {
+                    BlockToggleButton(
+                        title: "HEAD",
+                        isSelected: viewModel.selectedBlockTypes.contains(.headBlock),
+                        color: RSOGPalette.blockColor(.headBlock)
+                    ) {
+                        viewModel.toggleBlock(.headBlock)
+                    }
+                    
+                    BlockToggleButton(
+                        title: "BRIDGE",
+                        isSelected: viewModel.selectedBlockTypes.contains(.bridgeBlock),
+                        color: RSOGPalette.blockColor(.bridgeBlock)
+                    ) {
+                        viewModel.toggleBlock(.bridgeBlock)
+                    }
+                    
+                    BlockToggleButton(
+                        title: "TRIPLE",
+                        isSelected: viewModel.selectedBlockTypes.contains(.tripleBlock),
+                        color: RSOGPalette.blockColor(.tripleBlock)
+                    ) {
+                        viewModel.toggleBlock(.tripleBlock)
+                    }
                 }
-                .pickerStyle(.menu)
-                .onChange(of: viewModel.patternType) { _, newType in
-                    viewModel.setPatternType(newType)
+                .padding(.horizontal)
+                
+                if let groups = viewModel.selectedPattern?.chordGroups, !groups.isEmpty {
+                    RSOGChordLegendView(groups: groups)
                 }
             }
-            .padding(.horizontal)
             
-            // Toggle pattern overlay
-            Toggle("Show Pattern Overlay", isOn: $viewModel.showPatternOverlay)
-                .padding(.horizontal)
-                .onChange(of: viewModel.showPatternOverlay) { _, _ in
-                    viewModel.togglePatternOverlay()
-                }
-            
-            // Block controls
-            VStack(spacing: 8) {
-                Toggle("Show Blocks", isOn: $viewModel.showBlocks)
-                    .padding(.horizontal)
-                    .onChange(of: viewModel.showBlocks) { _, _ in
-                        viewModel.toggleBlocks()
-                    }
-                
-                if viewModel.showBlocks {
-                    Toggle("Show Full Pattern", isOn: $viewModel.showFullPattern)
-                        .padding(.horizontal)
-                        .onChange(of: viewModel.showFullPattern) { _, _ in
-                            viewModel.toggleFullPattern()
+            DisclosureGroup("More controls", isExpanded: $showAdvancedControls) {
+                VStack(spacing: 10) {
+                    Toggle("Show Pattern Overlay", isOn: Binding(
+                        get: { viewModel.showPatternOverlay },
+                        set: { viewModel.setShowPatternOverlay($0) }
+                    ))
+                    
+                    Toggle("Show Blocks", isOn: Binding(
+                        get: { viewModel.showBlocks },
+                        set: { viewModel.setShowBlocks($0) }
+                    ))
+                    
+                    Toggle("Show Full Diatonic Pattern", isOn: $viewModel.showFullPattern)
+                        .onChange(of: viewModel.showFullPattern) { _, newValue in
+                            if newValue { viewModel.updateDiatonicPattern() }
+                            viewModel.isOverviewMode = false
                         }
                     
-                    Toggle("Show Infinite Bass Pattern", isOn: $viewModel.showInfiniteBassPattern)
-                        .padding(.horizontal)
-                        .onChange(of: viewModel.showInfiniteBassPattern) { _, _ in
-                            viewModel.toggleInfiniteBassPattern()
+                    Toggle("Show Infinite Bass Pattern", isOn: Binding(
+                        get: { viewModel.showInfiniteBassPattern },
+                        set: { newValue in
+                            if newValue != viewModel.showInfiniteBassPattern {
+                                viewModel.toggleInfiniteBassPattern()
+                            }
                         }
+                    ))
                     
                     if viewModel.showInfiniteBassPattern {
                         HStack(spacing: 12) {
-                            Button("←") {
-                                viewModel.shiftPattern(fretDelta: -1, stringDelta: 0)
-                            }
-                            Button("→") {
-                                viewModel.shiftPattern(fretDelta: 1, stringDelta: 0)
-                            }
-                            Button("↑") {
-                                viewModel.shiftPattern(fretDelta: 0, stringDelta: 1)
-                            }
-                            Button("↓") {
-                                viewModel.shiftPattern(fretDelta: 0, stringDelta: -1)
-                            }
-                            Text("Shift Pattern")
-                                .font(.caption)
+                            Button("←") { viewModel.shiftPattern(fretDelta: -1, stringDelta: 0) }
+                            Button("→") { viewModel.shiftPattern(fretDelta: 1, stringDelta: 0) }
+                            Button("↑") { viewModel.shiftPattern(fretDelta: 0, stringDelta: 1) }
+                            Button("↓") { viewModel.shiftPattern(fretDelta: 0, stringDelta: -1) }
+                            Text("Shift Pattern").font(.caption)
                         }
-                        .padding(.horizontal)
                     }
                     
-                    HStack(spacing: 16) {
-                        BlockToggleButton(
-                            title: "HEAD",
-                            isSelected: viewModel.selectedBlockTypes.contains(.headBlock),
-                            color: .blue
-                        ) {
-                            viewModel.toggleBlock(.headBlock)
-                        }
-                        
-                        BlockToggleButton(
-                            title: "BRIDGE",
-                            isSelected: viewModel.selectedBlockTypes.contains(.bridgeBlock),
-                            color: .green
-                        ) {
-                            viewModel.toggleBlock(.bridgeBlock)
-                        }
-                        
-                        BlockToggleButton(
-                            title: "TRIPLE",
-                            isSelected: viewModel.selectedBlockTypes.contains(.tripleBlock),
-                            color: .orange
-                        ) {
-                            viewModel.toggleBlock(.tripleBlock)
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-            }
-            
-            // CAGED controls (independent of blocks)
-            VStack(spacing: 8) {
-                Toggle("Show CAGED", isOn: $viewModel.showCAGED)
-                    .padding(.horizontal)
-                    .onChange(of: viewModel.showCAGED) { _, _ in
-                        viewModel.toggleCAGED()
-                    }
-                
-                if viewModel.showCAGED {
-                    HStack(spacing: 12) {
-                        ForEach(CAGEDForm.allCases, id: \.self) { form in
-                            BlockToggleButton(
-                                title: form.rawValue,
-                                isSelected: viewModel.selectedCAGEDForms.contains(form),
-                                color: .purple
-                            ) {
-                                viewModel.toggleCAGEDForm(form)
+                    Toggle("Show CAGED", isOn: Binding(
+                        get: { viewModel.showCAGED },
+                        set: { newValue in
+                            if newValue != viewModel.showCAGED {
+                                viewModel.toggleCAGED()
                             }
                         }
-                    }
-                    .padding(.horizontal)
-                }
-            }
-            
-            // Mode controls
-            VStack(spacing: 8) {
-                Toggle("Show Modes", isOn: $viewModel.showModes)
-                    .padding(.horizontal)
-                    .onChange(of: viewModel.showModes) { _, _ in
-                        viewModel.toggleModes()
-                    }
-                
-                if viewModel.showModes {
-                    // Mode selector
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(Mode.allCases, id: \.self) { mode in
-                                ModeToggleButton(
-                                    mode: mode,
-                                    isSelected: viewModel.selectedMode == mode
+                    ))
+                    
+                    if viewModel.showCAGED {
+                        HStack(spacing: 12) {
+                            ForEach(CAGEDForm.allCases, id: \.self) { form in
+                                BlockToggleButton(
+                                    title: form.rawValue,
+                                    isSelected: viewModel.selectedCAGEDForms.contains(form),
+                                    color: .purple
                                 ) {
-                                    viewModel.selectMode(mode)
+                                    viewModel.toggleCAGEDForm(form)
                                 }
                             }
                         }
-                        .padding(.horizontal)
                     }
                     
-                    // Mode info
-                    if let shape = viewModel.modeShape {
-                        VStack(spacing: 4) {
-                            HStack {
-                                Text("\(viewModel.selectedKey.rootNote.rawValue) \(viewModel.selectedMode.rawValue)")
-                                    .font(.headline)
-                                    .foregroundColor(.purple)
-                                Text("(\(viewModel.selectedMode.quality))")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                    Toggle("Show Modes", isOn: Binding(
+                        get: { viewModel.showModes },
+                        set: { newValue in
+                            if newValue != viewModel.showModes {
+                                viewModel.toggleModes()
                             }
-                            Text(shape.description)
+                        }
+                    ))
+                    
+                    if viewModel.showModes {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(Mode.allCases, id: \.self) { mode in
+                                    ModeToggleButton(
+                                        mode: mode,
+                                        isSelected: viewModel.selectedMode == mode
+                                    ) {
+                                        viewModel.selectMode(mode)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if let shape = viewModel.modeShape {
+                            Text("\(viewModel.selectedKey.rootNote.rawValue) \(viewModel.selectedMode.rawValue) — \(shape.description)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
                         }
-                        .padding(.horizontal)
                     }
                 }
+                .padding(.top, 4)
             }
+            .padding(.horizontal)
             
             // Sound controls
             HStack(spacing: 16) {
@@ -342,20 +356,27 @@ struct FretboardView: View {
                                     viewModel.shiftPattern(fretDelta: fretDelta, stringDelta: stringDelta)
                                 }
                             } else {
-                                handleDragChanged(value, fretWidth: calculatedFretWidth, stringSpacing: calculatedStringSpacing)
+                                // Block hit-testing uses the physical 6-string layout.
+                                let blockStringSpacing = geometry.size.height / CGFloat(Constants.numberOfStrings)
+                                handleDragChanged(value, fretWidth: calculatedFretWidth, stringSpacing: blockStringSpacing)
                             }
                         }
                         .onEnded { value in
                             let totalStrings = viewModel.showInfiniteBassPattern ? viewModel.extendedStringCount : Constants.numberOfStrings
                             let calculatedFretWidth = geometry.size.width / CGFloat(viewModel.maxFret + 1)
                             let calculatedStringSpacing = geometry.size.height / CGFloat(totalStrings)
+                            let blockStringSpacing = geometry.size.height / CGFloat(Constants.numberOfStrings)
                             
                             if viewModel.draggedBlockId == nil {
                                 // If not dragging a block, treat as tap
-                                handleTap(at: value.location)
+                                handleTap(
+                                    at: value.location,
+                                    fretWidth: calculatedFretWidth,
+                                    stringSpacing: blockStringSpacing
+                                )
                             } else {
                                 // End block drag
-                                handleDragEnded(value, fretWidth: calculatedFretWidth, stringSpacing: calculatedStringSpacing)
+                                handleDragEnded(value, fretWidth: calculatedFretWidth, stringSpacing: blockStringSpacing)
                             }
                         }
                 )
@@ -385,167 +406,116 @@ struct FretboardView: View {
     }
     
     private func drawFretboard(context: GraphicsContext, size: CGSize) {
-        // Calculate string spacing based on extended string count if infinite bass pattern is shown
+        var context = context
         let totalStrings = viewModel.showInfiniteBassPattern ? viewModel.extendedStringCount : Constants.numberOfStrings
         let fretWidth = size.width / CGFloat(viewModel.maxFret + 1)
         let stringSpacing = size.height / CGFloat(totalStrings)
         
-        // Offset for string labels
-        let labelOffset: CGFloat = 24
+        // Standard layout: string 1 (high E) at top. Used for blocks/patterns/notes.
+        let layout = FretboardLayout(
+            maxFret: viewModel.maxFret,
+            fretWidth: fretWidth,
+            stringSpacing: viewModel.showInfiniteBassPattern
+                ? size.height / CGFloat(Constants.numberOfStrings)
+                : stringSpacing,
+            labelOffset: 24,
+            stringCount: Constants.numberOfStrings,
+            size: size
+        )
         
-        // Draw frets (vertical lines)
-        for fret in 0...viewModel.maxFret {
-            let x = CGFloat(fret) * fretWidth + labelOffset
-            context.stroke(
-                Path { path in
-                    path.move(to: CGPoint(x: x, y: 0))
-                    path.addLine(to: CGPoint(x: x, y: size.height))
-                },
-                with: .color(.gray),
-                lineWidth: fret == 0 ? 3 : 1
-            )
-        }
+        // Frets
+        FretboardRenderer.drawGrid(context: &context, layout: layout, drawFrets: true, drawStrings: false)
         
-        // Draw strings (horizontal lines)
-        // If showing infinite bass pattern, draw extended strings
-        let stringRange = viewModel.showInfiniteBassPattern ? 
-            (1 - viewModel.extendedStringCount / 2 + viewModel.patternOffset.string)...(Constants.numberOfStrings + viewModel.extendedStringCount / 2 + viewModel.patternOffset.string) :
-            (1...Constants.numberOfStrings)
-        
-        for virtualString in stringRange {
-            // Calculate visual position (centered around physical strings 1-6)
+        // Strings — extended virtual strings when infinite bass is on
+        if viewModel.showInfiniteBassPattern {
+            let stringRange = (1 - viewModel.extendedStringCount / 2 + viewModel.patternOffset.string)...(Constants.numberOfStrings + viewModel.extendedStringCount / 2 + viewModel.patternOffset.string)
             let physicalStringCenter = CGFloat(Constants.numberOfStrings) / 2.0 + 0.5
-            let virtualStringOffset = CGFloat(virtualString - Int(physicalStringCenter))
-            let y = size.height / 2.0 + virtualStringOffset * stringSpacing
+            for virtualString in stringRange {
+                let virtualStringOffset = CGFloat(virtualString - Int(physicalStringCenter))
+                let y = size.height / 2.0 + virtualStringOffset * stringSpacing
+                let isPhysical = virtualString >= 1 && virtualString <= Constants.numberOfStrings
+                var path = Path()
+                path.move(to: CGPoint(x: layout.labelOffset, y: y))
+                path.addLine(to: CGPoint(x: size.width, y: y))
+                context.stroke(
+                    path,
+                    with: .color(isPhysical ? Color.gray : Color.gray.opacity(0.3)),
+                    lineWidth: isPhysical ? 2 : 0.5
+                )
+            }
+        } else {
+            FretboardRenderer.drawGrid(context: &context, layout: layout, drawFrets: false, drawStrings: true)
+        }
+        
+        if viewModel.showBlocks && !viewModel.selectedBlockTypes.isEmpty {
+            if viewModel.showFullPattern {
+                FretboardRenderer.drawDiatonicPattern(
+                    context: &context,
+                    layout: layout,
+                    positions: viewModel.diatonicPattern
+                )
+            }
             
-            // Highlight physical strings (1-6) with thicker lines
-            let isPhysicalString = virtualString >= 1 && virtualString <= Constants.numberOfStrings
-            let lineWidth: CGFloat = isPhysicalString ? 2 : 0.5
-            let lineColor: Color = isPhysicalString ? .gray : .gray.opacity(0.3)
-            
-            context.stroke(
-                Path { path in
-                    path.move(to: CGPoint(x: labelOffset, y: y))
-                    path.addLine(to: CGPoint(x: size.width, y: y))
-                },
-                with: .color(lineColor),
-                lineWidth: lineWidth
+            var offsets: [UUID: CGSize] = [:]
+            for block in viewModel.blocks {
+                offsets[block.id] = viewModel.getBlockOffset(block.id)
+            }
+            FretboardRenderer.drawBlocks(
+                context: &context,
+                layout: layout,
+                blocks: viewModel.blocks,
+                selectedTypes: viewModel.selectedBlockTypes,
+                offsets: offsets,
+                showRegions: true,
+                showSpacingMarkers: true,
+                showBrackets: true
             )
         }
         
-        // Draw block overlay if enabled (draw first so it's behind patterns)
-        if viewModel.showBlocks && !viewModel.selectedBlockTypes.isEmpty {
-            drawBlockOverlay(context: context, size: size, fretWidth: fretWidth, stringSpacing: stringSpacing)
-        }
-        
-        // Draw infinite bass pattern if enabled
         if viewModel.showInfiniteBassPattern {
             drawInfiniteBassPattern(context: context, size: size, fretWidth: fretWidth, stringSpacing: stringSpacing)
         }
         
-        // Draw CAGED shapes if enabled
         if viewModel.showCAGED {
-            drawCAGEDShapes(context: context, size: size, fretWidth: fretWidth, stringSpacing: stringSpacing)
+            drawCAGEDShapes(context: context, size: size, layout: layout)
         }
         
-        // Draw mode shape if enabled
         if viewModel.showModes {
-            drawModeShape(context: context, size: size, fretWidth: fretWidth, stringSpacing: stringSpacing)
+            drawModeShape(context: context, size: size, layout: layout)
         }
         
-        // Draw pattern overlay if enabled
-        if viewModel.showPatternOverlay {
-            drawPatternOverlay(context: context, size: size, fretWidth: fretWidth, stringSpacing: stringSpacing)
-        }
-        
-        // Draw note positions (but skip positions that are in selected blocks to avoid covering them)
-        drawNotePositions(context: context, size: size, fretWidth: fretWidth, stringSpacing: stringSpacing)
-    }
-    
-    private func drawBlockOverlay(context: GraphicsContext, size: CGSize, fretWidth: CGFloat, stringSpacing: CGFloat) {
-        let labelOffset: CGFloat = 24
-        
-        // Draw full diatonic pattern if enabled
-        if viewModel.showFullPattern {
-        for position in viewModel.diatonicPattern {
-                let x = CGFloat(position.fret) * fretWidth + fretWidth / 2 + labelOffset
-                let y = (CGFloat(position.string - 1) + 0.5) * stringSpacing
-                
-                // Use bright green for diatonic pattern notes - visible in dark mode
-                let color: Color = position.isRoot ? Color(red: 0.3, green: 0.9, blue: 0.4).opacity(0.7) : Color(red: 0.3, green: 0.9, blue: 0.4).opacity(0.45)
-                let radius: CGFloat = position.isRoot ? 6 : 5
-                
-                context.fill(
-                    Path(ellipseIn: CGRect(
-                        x: x - radius,
-                        y: y - radius,
-                        width: radius * 2,
-                        height: radius * 2
-                    )),
-                    with: .color(color)
+        if viewModel.showPatternOverlay, let pattern = viewModel.selectedPattern {
+            FretboardRenderer.drawPattern(context: &context, layout: layout, pattern: pattern)
+        } else if viewModel.showPatternOverlay {
+            // Fallback: highlighted positions without a full Pattern model
+            for position in viewModel.highlightedPositions {
+                let p = layout.point(for: position)
+                let color: Color = position.isRoot
+                    ? Color(red: 0.3, green: 0.7, blue: 1.0)
+                    : Color(red: 0.3, green: 0.9, blue: 0.4)
+                FretboardRenderer.fillCircle(
+                    context: &context,
+                    center: p,
+                    radius: position.isRoot ? 12 : 8,
+                    color: color.opacity(0.8)
                 )
             }
         }
         
-        // Draw blocks by highlighting each note with a colored square
-        for block in viewModel.blocks {
-            guard viewModel.selectedBlockTypes.contains(block.type) else { continue }
-            
-            guard !block.positions.isEmpty else { continue }
-            
-            // Get drag offset for this block
-            let offset = viewModel.getBlockOffset(block.id)
-            
-            let color = blockColor(block.type)
-            let squareSize: CGFloat = 16  // Size of the square highlight
-            
-            // Draw a colored square for each note in the block
-            for position in block.positions {
-                let x = CGFloat(position.fret) * fretWidth + fretWidth / 2 + labelOffset + offset.width
-                let y = (CGFloat(position.string - 1) + 0.5) * stringSpacing + offset.height
-                
-                let squareRect = CGRect(
-                    x: x - squareSize / 2,
-                    y: y - squareSize / 2,
-                    width: squareSize,
-                    height: squareSize
-                )
-                
-                // Draw filled square with the block's color
-                var squarePath = Path()
-                squarePath.addRect(squareRect)
-                
-                context.fill(squarePath, with: .color(color.opacity(0.6)))
-                context.stroke(squarePath, with: .color(color), lineWidth: 2)
-            }
-            
-            // Draw block label at the first note position
-            if let firstPos = block.positions.first {
-                let labelX = CGFloat(firstPos.fret) * fretWidth + fretWidth / 2 + labelOffset + offset.width
-                let labelY = (CGFloat(firstPos.string - 1) + 0.5) * stringSpacing + offset.height - 20
-                
-                // Draw background rectangle for label
-                let labelWidth = CGFloat(max(60, block.name.count * 7))
-                let labelHeight: CGFloat = 18
-                let labelRect = CGRect(
-                    x: labelX - labelWidth / 2,
-                    y: labelY - labelHeight / 2,
-                    width: labelWidth,
-                    height: labelHeight
-                )
-                
-                var bgPath = Path()
-                bgPath.addRoundedRect(in: labelRect, cornerSize: CGSize(width: 4, height: 4))
-                context.fill(bgPath, with: .color(color.opacity(0.9)))
-                context.stroke(bgPath, with: .color(color), lineWidth: 1)
-                
-                // Draw label text
-                let text = Text(block.name)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.white)
-                context.draw(text, at: CGPoint(x: labelX, y: labelY))
-            }
-        }
+        let suppressed = (viewModel.showBlocks && !viewModel.selectedBlockTypes.isEmpty)
+            ? FretboardRenderer.blockCoordinateKeys(
+                blocks: viewModel.blocks,
+                selectedTypes: viewModel.selectedBlockTypes
+            )
+            : []
+        let highlighted = Set(viewModel.highlightedPositions.map(\.coordinateKey))
+        FretboardRenderer.drawBaseNotes(
+            context: &context,
+            layout: layout,
+            selected: viewModel.selectedPosition,
+            highlightedKeys: highlighted,
+            suppressedKeys: suppressed
+        )
     }
     
     private func drawInfiniteBassPattern(context: GraphicsContext, size: CGSize, fretWidth: CGFloat, stringSpacing: CGFloat) {
@@ -581,100 +551,70 @@ struct FretboardView: View {
         }
     }
     
-    private func drawCAGEDShapes(context: GraphicsContext, size: CGSize, fretWidth: CGFloat, stringSpacing: CGFloat) {
-        let labelOffset: CGFloat = 24
-        
+    private func drawCAGEDShapes(context: GraphicsContext, size: CGSize, layout: FretboardLayout) {
         guard !viewModel.cagedShapes.isEmpty else { return }
         
-        // Draw each selected CAGED shape
+        let brightCyan = Color(red: 0.0, green: 0.9, blue: 1.0)
+        let rootOrange = Color(red: 1.0, green: 0.6, blue: 0.0)
+        let squareSize: CGFloat = 18
+        
         for shape in viewModel.cagedShapes {
             guard viewModel.selectedCAGEDForms.contains(shape.form) else { continue }
             guard !shape.positions.isEmpty else { continue }
             
-            // Vibrant colors that work in both light and dark mode
-            let brightCyan: Color = Color(red: 0.0, green: 0.9, blue: 1.0)  // Bright cyan for chord tones
-            let rootOrange: Color = Color(red: 1.0, green: 0.6, blue: 0.0)  // Orange for root notes
-            let squareSize: CGFloat = 18  // Larger for better visibility
-            
-            // Draw a colored square for each note in the CAGED shape
             for position in shape.positions {
-                // Calculate position - ensure fret and string are valid
                 guard position.fret >= 0 && position.fret <= viewModel.maxFret else { continue }
                 guard position.string >= 1 && position.string <= Constants.numberOfStrings else { continue }
                 
-                let x = CGFloat(position.fret) * fretWidth + fretWidth / 2 + labelOffset
-                let y = (CGFloat(position.string - 1) + 0.5) * stringSpacing
-                
+                let p = layout.point(for: position)
                 let squareRect = CGRect(
-                    x: x - squareSize / 2,
-                    y: y - squareSize / 2,
+                    x: p.x - squareSize / 2,
+                    y: p.y - squareSize / 2,
                     width: squareSize,
                     height: squareSize
                 )
-                
                 var squarePath = Path()
                 squarePath.addRect(squareRect)
-                
-                // Use orange for root notes, bright cyan for others - high visibility in dark mode
-                let fillColor = position.isRoot ? rootOrange : brightCyan
-                let strokeColor: Color = .white  // White outline for dark mode visibility
-                
-                context.fill(squarePath, with: .color(fillColor.opacity(0.9)))
-                context.stroke(squarePath, with: .color(strokeColor), lineWidth: 2.0)
+                context.fill(squarePath, with: .color((position.isRoot ? rootOrange : brightCyan).opacity(0.9)))
+                context.stroke(squarePath, with: .color(.white), lineWidth: 2.0)
             }
             
-            // Draw CAGED form label at the root position
-            let labelX = CGFloat(shape.rootPosition.fret) * fretWidth + fretWidth / 2 + labelOffset
-            let labelY = (CGFloat(shape.rootPosition.string - 1) + 0.5) * stringSpacing - 20
-            
-            // Draw background rectangle for label
+            let rootPoint = layout.point(for: shape.rootPosition)
             let labelWidth = CGFloat(max(40, shape.form.rawValue.count * 8))
-            let labelHeight: CGFloat = 18
             let labelRect = CGRect(
-                x: labelX - labelWidth / 2,
-                y: labelY - labelHeight / 2,
+                x: rootPoint.x - labelWidth / 2,
+                y: rootPoint.y - 20 - 9,
                 width: labelWidth,
-                height: labelHeight
+                height: 18
             )
-            
             var bgPath = Path()
             bgPath.addRoundedRect(in: labelRect, cornerSize: CGSize(width: 4, height: 4))
-            let labelBgColor = Color(red: 0.2, green: 0.2, blue: 0.3)  // Dark gray-blue background
-            context.fill(bgPath, with: .color(labelBgColor.opacity(0.95)))
+            context.fill(bgPath, with: .color(Color(red: 0.2, green: 0.2, blue: 0.3).opacity(0.95)))
             context.stroke(bgPath, with: .color(.white), lineWidth: 1.5)
-            
-            // Draw label text
             let text = Text(shape.form.rawValue)
                 .font(.system(size: 11, weight: .bold))
                 .foregroundColor(.white)
-            context.draw(text, at: CGPoint(x: labelX, y: labelY))
+            context.draw(text, at: CGPoint(x: rootPoint.x, y: rootPoint.y - 20))
         }
     }
     
-    private func drawModeShape(context: GraphicsContext, size: CGSize, fretWidth: CGFloat, stringSpacing: CGFloat) {
-        let labelOffset: CGFloat = 24
-        
+    private func drawModeShape(context: GraphicsContext, size: CGSize, layout: FretboardLayout) {
+        var context = context
         guard let shape = viewModel.modeShape else { return }
         
-        // Mode colors - purple theme with different shades for scale degrees
-        let rootColor = Color(red: 0.7, green: 0.3, blue: 0.9)      // Bright purple for root
-        let characteristicColor = Color(red: 1.0, green: 0.5, blue: 0.8)  // Pink for characteristic note
-        let normalColor = Color(red: 0.6, green: 0.4, blue: 0.8)    // Lighter purple for other notes
-        
+        let rootColor = Color(red: 0.7, green: 0.3, blue: 0.9)
+        let characteristicColor = Color(red: 1.0, green: 0.5, blue: 0.8)
+        let normalColor = Color(red: 0.6, green: 0.4, blue: 0.8)
         let characteristicInterval = viewModel.selectedMode.characteristicInterval
         
         for position in shape.positions {
             guard position.fret >= 0 && position.fret <= viewModel.maxFret else { continue }
             guard position.string >= 1 && position.string <= Constants.numberOfStrings else { continue }
             
-            let x = CGFloat(position.fret) * fretWidth + fretWidth / 2 + labelOffset
-            let y = (CGFloat(position.string - 1) + 0.5) * stringSpacing
-            
-            // Determine if this is the characteristic note
+            let p = layout.point(for: position)
             let semitones = (position.note.semitonesFromC - viewModel.selectedKey.rootNote.semitonesFromC + 12) % 12
             let isCharacteristic = semitones == characteristicInterval
             
-            // Choose color based on note type
             let fillColor: Color
             let radius: CGFloat
             if position.isRoot {
@@ -688,185 +628,84 @@ struct FretboardView: View {
                 radius = 8
             }
             
-            // Draw filled circle
-            context.fill(
-                Path(ellipseIn: CGRect(
-                    x: x - radius,
-                    y: y - radius,
-                    width: radius * 2,
-                    height: radius * 2
-                )),
-                with: .color(fillColor.opacity(0.85))
-            )
+            FretboardRenderer.fillCircle(context: &context, center: p, radius: radius, color: fillColor.opacity(0.85))
+            FretboardRenderer.strokeCircle(context: &context, center: p, radius: radius, color: .white, lineWidth: 1.5)
             
-            // Draw white outline
-            context.stroke(
-                Path(ellipseIn: CGRect(
-                    x: x - radius,
-                    y: y - radius,
-                    width: radius * 2,
-                    height: radius * 2
-                )),
-                with: .color(.white),
-                lineWidth: 1.5
-            )
-            
-            // Draw interval name for root notes
             if position.isRoot {
                 let intervalText = Text("R")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundColor(.white)
-                context.draw(intervalText, at: CGPoint(x: x, y: y))
+                context.draw(intervalText, at: p)
             }
         }
     }
     
-    private func blockColor(_ type: BlockType) -> Color {
-        switch type {
-        case .headBlock:
-            return Color(red: 0.4, green: 0.8, blue: 1.0)  // Bright sky blue
-        case .bridgeBlock:
-            return Color(red: 0.4, green: 1.0, blue: 0.6)  // Bright mint green
-        case .tripleBlock:
-            return Color(red: 1.0, green: 0.7, blue: 0.3)  // Bright orange-yellow
-        }
-    }
-    
-    private func drawPatternOverlay(context: GraphicsContext, size: CGSize, fretWidth: CGFloat, stringSpacing: CGFloat) {
-        let labelOffset: CGFloat = 24
-        for position in viewModel.highlightedPositions {
-            let x = CGFloat(position.fret) * fretWidth + fretWidth / 2 + labelOffset
-            let y = (CGFloat(position.string - 1) + 0.5) * stringSpacing
-            
-            // Bright colors for dark mode visibility
-            let rootColor = Color(red: 0.3, green: 0.7, blue: 1.0)  // Bright blue for root
-            let noteColor = Color(red: 0.3, green: 0.9, blue: 0.4)  // Bright green for other notes
-            let color: Color = position.isRoot ? rootColor : noteColor
-            let radius: CGFloat = position.isRoot ? 12 : 8
-            
-            context.fill(
-                Path(ellipseIn: CGRect(
-                    x: x - radius,
-                    y: y - radius,
-                    width: radius * 2,
-                    height: radius * 2
-                )),
-                with: .color(color.opacity(0.8))
-            )
-        }
-    }
-    
-    private func drawNotePositions(context: GraphicsContext, size: CGSize, fretWidth: CGFloat, stringSpacing: CGFloat) {
-        // Draw all note positions as tappable circles
-        for string in 1...Constants.numberOfStrings {
-            for fret in 0...viewModel.maxFret {
-                let note = viewModel.getNoteAt(string: string, fret: fret)
-                let position = FretboardPosition(string: string, fret: fret, note: note)
-                
-                let labelOffset: CGFloat = 24
-                let x = CGFloat(fret) * fretWidth + fretWidth / 2 + labelOffset
-                let y = (CGFloat(string - 1) + 0.5) * stringSpacing
-                
-                let isSelected = viewModel.isPositionSelected(position)
-                let isHighlighted = viewModel.isPositionHighlighted(position)
-                
-                // Check if this position is in a selected block - if so, skip drawing here (already drawn in block overlay)
-                let isInSelectedBlock = viewModel.showBlocks && 
-                    viewModel.blocks.contains { block in
-                        viewModel.selectedBlockTypes.contains(block.type) &&
-                        block.positions.contains { blockPos in
-                            blockPos.string == position.string && blockPos.fret == position.fret
-                        }
-                    }
-                
-                // Skip drawing if it's in a selected block (already drawn above)
-                if isInSelectedBlock && !isSelected {
-                    continue
-                }
-                
-                let color: Color = isSelected ? Color(red: 1.0, green: 0.3, blue: 0.3) : (isHighlighted ? .clear : .gray.opacity(0.5))
-                let radius: CGFloat = isSelected ? 10 : 6
-                
-                if !isHighlighted || isSelected {
-                    context.fill(
-                        Path(ellipseIn: CGRect(
-                            x: x - radius,
-                            y: y - radius,
-                            width: radius * 2,
-                            height: radius * 2
-                        )),
-                        with: .color(color)
-                    )
-                }
-                
-                // Draw note name
-                if isSelected {
-                    let text = Text(note.rawValue)
-                        .font(.caption2)
-                        .foregroundColor(.white)
-                    context.draw(text, at: CGPoint(x: x, y: y))
-                }
-            }
-        }
-    }
-    
-    private func handleTap(at location: CGPoint) {
-        let fretWidth = CGFloat(viewModel.maxFret + 1) * 40
-        let stringSpacing = CGFloat(Constants.numberOfStrings) * 30
-        let labelOffset: CGFloat = 24
+    private func handleTap(at location: CGPoint, fretWidth: CGFloat, stringSpacing: CGFloat) {
+        let layout = FretboardLayout(
+            maxFret: viewModel.maxFret,
+            fretWidth: fretWidth,
+            stringSpacing: stringSpacing,
+            labelOffset: 24
+        )
         
-        // Account for label offset when calculating fret
-        let adjustedX = location.x - labelOffset
-        let fret = Int(adjustedX / (fretWidth / CGFloat(viewModel.maxFret + 1)))
-        // Invert string calculation: y=0 is now string 6 (low E), y=max is string 1 (high E)
-        let stringIndex = Int(location.y / (stringSpacing / CGFloat(Constants.numberOfStrings)))
-        let string = stringIndex + 1
-        
-        guard fret >= 0 && fret <= viewModel.maxFret &&
-              string >= 1 && string <= Constants.numberOfStrings else {
+        // Prefer inspecting a block when the tap lands on a block note.
+        if viewModel.showBlocks, let block = blockAt(location: location, layout: layout) {
+            viewModel.inspectBlock(block)
             return
         }
         
-        let note = viewModel.getNoteAt(string: string, fret: fret)
-        let position = FretboardPosition(string: string, fret: fret, note: note)
-        viewModel.selectPosition(position)
+        guard let hit = layout.hitTest(at: location) else { return }
+        let note = viewModel.getNoteAt(string: hit.string, fret: hit.fret)
+        viewModel.selectPosition(FretboardPosition(string: hit.string, fret: hit.fret, note: note))
+    }
+    
+    private func blockAt(location: CGPoint, layout: FretboardLayout) -> Block? {
+        let hitRadius: CGFloat = 14
+        var best: (block: Block, distance: CGFloat)?
+        
+        for block in viewModel.blocks {
+            guard viewModel.selectedBlockTypes.contains(block.type) else { continue }
+            let offset = viewModel.getBlockOffset(block.id)
+            for position in block.positions {
+                let p = layout.point(for: position, offset: offset)
+                let distance = hypot(location.x - p.x, location.y - p.y)
+                if distance <= hitRadius {
+                    if best == nil || distance < best!.distance {
+                        best = (block, distance)
+                    }
+                }
+            }
+        }
+        return best?.block
     }
     
     private func handleDragChanged(_ value: DragGesture.Value, fretWidth: CGFloat, stringSpacing: CGFloat) {
-        let labelOffset: CGFloat = 24
+        let layout = FretboardLayout(
+            maxFret: viewModel.maxFret,
+            fretWidth: fretWidth,
+            stringSpacing: stringSpacing,
+            labelOffset: 24
+        )
         let startLocation = value.startLocation
         
-        // If we're not already dragging a block, check if we're starting to drag one
         if viewModel.draggedBlockId == nil {
-            // Find which block contains the start point by checking if it's near any note square
-            let squareSize: CGFloat = 16
-            let hitRadius = squareSize / 2 + 5  // Add some padding for easier dragging
-            
+            let hitRadius: CGFloat = 13
             for block in viewModel.blocks {
                 guard viewModel.selectedBlockTypes.contains(block.type) else { continue }
-                guard !block.positions.isEmpty else { continue }
-                
-                // Check if the start location is within any note square in this block
                 for position in block.positions {
-                    let x = CGFloat(position.fret) * fretWidth + fretWidth / 2 + labelOffset
-                    let y = (CGFloat(position.string - 1) + 0.5) * stringSpacing
-                    
-                    let distance = sqrt(pow(startLocation.x - x, 2) + pow(startLocation.y - y, 2))
+                    let p = layout.point(for: position)
+                    let distance = hypot(startLocation.x - p.x, startLocation.y - p.y)
                     if distance <= hitRadius {
-                        // Start dragging this block
                         viewModel.startDraggingBlock(block.id)
                         break
                     }
                 }
-                
                 if viewModel.draggedBlockId != nil { break }
             }
         }
         
-        // Update drag offset if we're dragging a block
         if let blockId = viewModel.draggedBlockId {
-            let offset = value.translation
-            viewModel.updateBlockDrag(blockId, offset: offset)
+            viewModel.updateBlockDrag(blockId, offset: value.translation)
         }
     }
     

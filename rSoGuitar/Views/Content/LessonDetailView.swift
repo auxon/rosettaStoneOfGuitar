@@ -104,8 +104,20 @@ struct LessonDetailView: View {
                     .font(.headline)
                     .padding(.horizontal)
                 
-                PatternView(pattern: pattern)
-                    .frame(height: 300)
+                Text("Blocks: " + RSOGConceptInfo.demoBlocks(for: pattern.type)
+                    .map { RSOGConceptInfo.blockTitle($0) }
+                    .sorted()
+                    .joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+                
+                PatternView(
+                    pattern: pattern,
+                    initialShowBlocks: true,
+                    initialBlockTypes: RSOGConceptInfo.demoBlocks(for: pattern.type)
+                )
+                .frame(height: 320)
             }
         
         case .audioExample(let urlString):
@@ -120,6 +132,15 @@ struct LessonDetailView: View {
                     .font(.headline)
                 Text(exercise.instructions)
                     .font(.body)
+                
+                if let pattern = exercise.pattern {
+                    PatternView(
+                        pattern: pattern,
+                        initialShowBlocks: true,
+                        initialBlockTypes: RSOGConceptInfo.demoBlocks(for: pattern.type)
+                    )
+                    .frame(height: 280)
+                }
             }
             .padding()
             .background(Color(.systemGray6))

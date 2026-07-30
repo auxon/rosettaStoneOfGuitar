@@ -2,7 +2,7 @@
 //  MainTabView.swift
 //  rSoGuitar
 //
-//  Main tab-based navigation
+//  Main tab-based navigation — rSoG concepts front and center.
 //
 
 import SwiftUI
@@ -15,7 +15,7 @@ struct MainTabView: View {
     
     var body: some View {
         TabView {
-            // Lessons Tab
+            // Lessons
             NavigationView {
                 LessonListView()
             }
@@ -23,7 +23,7 @@ struct MainTabView: View {
                 Label("Lessons", systemImage: "book.fill")
             }
             
-            // Fretboard Explorer Tab
+            // Fretboard Explorer — primary rSoG workspace
             NavigationView {
                 FretboardView()
             }
@@ -31,13 +31,7 @@ struct MainTabView: View {
                 Label("Fretboard", systemImage: "guitars.fill")
             }
             
-            // Tuner Tab
-            TunerView()
-            .tabItem {
-                Label("Tuner", systemImage: "tuningfork")
-            }
-            
-            // Concepts Tab
+            // Concepts (before Tuner so methodology stays front-of-mind)
             NavigationView {
                 ConceptsListView()
             }
@@ -45,7 +39,13 @@ struct MainTabView: View {
                 Label("Concepts", systemImage: "brain.head.profile")
             }
             
-            // Profile/Settings Tab
+            // Tuner
+            TunerView()
+            .tabItem {
+                Label("Tuner", systemImage: "tuningfork")
+            }
+            
+            // Profile
             NavigationView {
                 ProfileView()
             }
@@ -54,7 +54,6 @@ struct MainTabView: View {
             }
         }
         .onAppear {
-            // Setup services
             subscriptionService.setModelContext(modelContext)
             progressService.setModelContext(modelContext)
         }
@@ -64,23 +63,68 @@ struct MainTabView: View {
 struct ConceptsListView: View {
     var body: some View {
         List {
-            NavigationLink(destination: ConceptView(conceptType: .spiralMapping)) {
-                Label("Spiral Mapping", systemImage: "arrow.triangle.2.circlepath")
+            Section {
+                Text(RSOGConceptInfo.methodBlurb)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 4)
+                
+                Link(destination: RSOGConceptInfo.siteURL) {
+                    Label("rSoGuitar lessons online", systemImage: "safari")
+                }
+            } header: {
+                Text("The Rosetta Stone of Guitar")
             }
             
-            NavigationLink(destination: ConceptView(conceptType: .jumping)) {
-                Label("Jumping", systemImage: "arrow.left.arrow.right")
+            Section("Four Core Concepts") {
+                ForEach(RSOGConceptInfo.allConcepts, id: \.self) { type in
+                    NavigationLink(destination: ConceptView(conceptType: type)) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label(RSOGConceptInfo.title(for: type), systemImage: icon(for: type))
+                                .font(.body.weight(.semibold))
+                            Text(RSOGConceptInfo.shortDescription(for: type))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
             }
             
-            NavigationLink(destination: ConceptView(conceptType: .familyOfChords)) {
-                Label("Family of Chords", systemImage: "music.note.list")
-            }
-            
-            NavigationLink(destination: ConceptView(conceptType: .familialHierarchy)) {
-                Label("Familial Hierarchy", systemImage: "chart.bar.fill")
+            Section("Fretboard Blocks") {
+                ForEach(RSOGConceptInfo.allBlockTypes, id: \.self) { type in
+                    HStack(alignment: .top, spacing: 12) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(RSOGPalette.blockColor(type))
+                            .frame(width: 16, height: 16)
+                            .padding(.top, 2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(RSOGConceptInfo.blockTitle(type))
+                                .font(.subheadline.weight(.bold))
+                            Text(RSOGConceptInfo.blockSubtitle(type))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(RSOGConceptInfo.blockDescription(type))
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
             }
         }
         .navigationTitle("Concepts")
+    }
+    
+    private func icon(for type: PatternType) -> String {
+        switch type {
+        case .spiralMapping: return "arrow.triangle.2.circlepath"
+        case .jumping: return "arrow.left.arrow.right"
+        case .familyOfChords: return "music.note.list"
+        case .familialHierarchy: return "chart.bar.fill"
+        }
     }
 }
 
@@ -172,6 +216,10 @@ struct ProfileView: View {
                     Text("1.0.0")
                         .foregroundColor(.secondary)
                 }
+                
+                Link(destination: RSOGConceptInfo.siteURL) {
+                    Label("rsoguitar.com lessons", systemImage: "link")
+                }
             }
         }
         .navigationTitle("Profile")
@@ -195,4 +243,3 @@ struct ProfileView: View {
     MainTabView()
         .environmentObject(SubscriptionService.shared)
 }
-

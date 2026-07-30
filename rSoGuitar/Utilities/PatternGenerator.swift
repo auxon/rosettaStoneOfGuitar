@@ -2,132 +2,335 @@
 //  PatternGenerator.swift
 //  rSoGuitar
 //
-//  Generates various rSoGuitar patterns
+//  Generates rSoGuitar patterns: Spiral Mapping, Jumping,
+//  Family of Chords, and Familial Hierarchy.
 //
 
 import Foundation
 import Combine
 
 struct PatternGenerator {
+    
+    // MARK: - Spiral Mapping
+    
+    /// Ordered vertical spiral across the fretboard with path connections.
+    /// Walks string 6→1 in one fret column, then 1→6 in the next, etc.
+    static func spiralMappingPattern(
+        for key: Key,
+        maxFret: Int = Constants.defaultFretCount
+    ) -> Pattern {
+        let keyNotes = Set(FretboardCalculator.notesInKey(key))
+        var positions: [FretboardPosition] = []
+        var connections: [PatternConnection] = []
+        
+        // Column width aligns with HEAD XX-X span (~3 frets) + breathing room.
+        let columnWidth = 4
+        var ascending = true // low E (6) → high e (1)
+        
+        for colStart in stride(from: 0, through: maxFret, by: columnWidth) {
+            let colEnd = min(maxFret, colStart + columnWidth - 1)
+            let stringOrder = ascending
+                ? Array((1...Constants.numberOfStrings).reversed())
+                : Array(1...Constants.numberOfStrings)
+            
+            for string in stringOrder {
+                let notesOnString = (colStart...colEnd).compactMap { fret -> FretboardPosition? in
+                    let note = FretboardCalculator.noteAt(string: string, fret: fret)
+                    guard keyNotes.contains(note) else { return nil }
+                    let degree = FretboardCalculator.scaleDegree(of: note, in: key)
+                    return FretboardPosition(
+                        string: string,
+                        fret: fret,
+                        note: note,
+                        isRoot: note == key.rootNote,
+                        scaleDegree: degree
+                    )
+                }.sorted { $0.fret < $1.fret }
+                
+                for pos in notesOnString {
+                    if let prev = positions.last {
+                        connections.append(PatternConnection(from: prev, to: pos, kind: .spiral))
+                    }
+                    positions.append(pos)
+                }
+            }
+            
+            ascending.toggle()
+        }
+        
+        return Pattern(
+            name: "Spiral Mapping - \(key.rootNote.rawValue)",
+            type: .spiralMapping,
+            key: key,
+            positions: positions,
+            description: "Spiral mapping walks the diatonic pattern vertically across the neck, column by column, leaving no in-key note unmapped.",
+            connections: connections
+        )
+    }
+    
+    // MARK: - Jumping
+    
     /// Generate jumping pattern - shows valid horizontal movements
-    static func jumpingPattern(from startPosition: FretboardPosition, in key: Key, maxFret: Int = Constants.defaultFretCount) -> Pattern {
+    static func jumpingPattern(
+        from startPosition: FretboardPosition,
+        in key: Key,
+        maxFret: Int = Constants.defaultFretCount
+    ) -> Pattern {
         let keyNotes = FretboardCalculator.notesInKey(key)
-        var positions: [FretboardPosition] = [startPosition]
+        var positions: [FretboardPosition] = []
+        var connections: [PatternConnection] = []
         
-        // Jumping allows horizontal movement (same string, different frets)
-        // that stay within the key
-        let startNote = startPosition.note
+        let enrichedStart = FretboardCalculator.enrich(startPosition, in: key)
+        positions.append(enrichedStart)
         
-        // Find valid jump positions on the same string
+        var jumpTargets: [FretboardPosition] = []
         for fret in 0...maxFret {
             if fret == startPosition.fret { continue }
             
             let note = FretboardCalculator.noteAt(string: startPosition.string, fret: fret)
             if keyNotes.contains(note) {
-                let isRoot = note == key.rootNote
-                positions.append(FretboardPosition(
+                let degree = FretboardCalculator.scaleDegree(of: note, in: key)
+                let pos = FretboardPosition(
                     string: startPosition.string,
                     fret: fret,
                     note: note,
-                    isRoot: isRoot
-                ))
+                    isRoot: note == key.rootNote,
+                    scaleDegree: degree
+                )
+                jumpTargets.append(pos)
+                connections.append(PatternConnection(from: enrichedStart, to: pos, kind: .jump))
             }
         }
+        
+        // Keep start first, then targets ordered by fret for a readable path.
+        positions.append(contentsOf: jumpTargets.sorted { $0.fret < $1.fret })
         
         return Pattern(
             name: "Jumping Pattern - \(key.rootNote.rawValue)",
             type: .jumping,
             key: key,
             positions: positions,
-            description: "Valid jump positions from the starting position, staying within the key."
+            description: "Valid jump positions from the starting position, staying within the key.",
+            connections: connections
         )
     }
     
-    /// Generate family of chords pattern - shows all chord positions horizontally
-    static func familyOfChordsPattern(for key: Key, chordQuality: ChordQuality = .major, maxFret: Int = Constants.defaultFretCount) -> Pattern {
-        let rootNote = key.rootNote
-        var positions: [FretboardPosition] = []
-        
-        // For major key, show I, IV, V chords (C, F, G in C major)
-        let chordRoots: [Note]
-        switch chordQuality {
-        case .major:
-            // I, IV, V
-            chordRoots = [
-                rootNote,
-                rootNote.addingSemitones(5), // IV
-                rootNote.addingSemitones(7)  // V
-            ]
-        case .minor:
-            // i, iv, v
-            chordRoots = [
-                rootNote,
-                rootNote.addingSemitones(5),
-                rootNote.addingSemitones(7)
-            ]
-        default:
-            chordRoots = [rootNote]
-        }
-        
-        // Find positions for each chord root across the fretboard
-        for chordRoot in chordRoots {
-            let rootPositions = FretboardCalculator.positionsFor(note: chordRoot, maxFret: maxFret)
-            positions.append(contentsOf: rootPositions.map { pos in
-                FretboardPosition(
-                    string: pos.string,
-                    fret: pos.fret,
-                    note: pos.note,
-                    isRoot: true
+    // MARK: - Family of Chords (horizontal triad voicings)
+    
+    /// Primary chord family (I–IV–V or i–iv–v) as triad voicings across the neck.
+    static func familyOfChordsPattern(
+        for key: Key,
+        chordQuality: ChordQuality = .major,
+        maxFret: Int = Constants.defaultFretCount
+    ) -> Pattern {
+        // Family degrees: major → I, IV, V; minor quality param → i, iv, v (degrees 0, 3, 4).
+        let degreeIndices = [0, 3, 4]
+        let degrees: [RSOGScaleDegree] = degreeIndices.map { index in
+            var degree = RSOGScaleDegree.majorKeyTriads[index]
+            if chordQuality == .minor {
+                // Display as minor-family numerals while keeping diatonic tones of the major parent for now.
+                let minorNumeral: String
+                switch index {
+                case 0: minorNumeral = "i"
+                case 3: minorNumeral = "iv"
+                case 4: minorNumeral = "v"
+                default: minorNumeral = degree.romanNumeral
+                }
+                degree = RSOGScaleDegree(
+                    degreeIndex: degree.degreeIndex,
+                    intervalFromRoot: degree.intervalFromRoot,
+                    quality: .minor,
+                    romanNumeral: minorNumeral
                 )
-            })
+            }
+            return degree
         }
         
+        var chordGroups: [ChordGroup] = []
+        var allPositions: [FretboardPosition] = []
+        var allConnections: [PatternConnection] = []
+        var seenCoords: Set<String> = []
+        
+        for degree in degrees {
+            let group = buildChordGroup(
+                degree: degree,
+                key: key,
+                maxFret: maxFret,
+                connectionKind: .triad,
+                maxVoicings: 8
+            )
+            chordGroups.append(group)
+            allConnections.append(contentsOf: group.connections)
+            
+            for pos in group.positions {
+                if seenCoords.insert(pos.coordinateKey).inserted {
+                    allPositions.append(pos)
+                }
+            }
+        }
+        
+        let qualityLabel = chordQuality == .minor ? "minor family" : "major"
         return Pattern(
-            name: "Family of Chords - \(key.rootNote.rawValue) \(chordQuality.rawValue)",
+            name: "Family of Chords - \(key.rootNote.rawValue) \(qualityLabel)",
             type: .familyOfChords,
             key: key,
-            positions: positions,
-            description: "All available positions for the primary chords in the key of \(key.rootNote.rawValue)."
+            positions: allPositions,
+            description: "Horizontal family of triad voicings (I, IV, V) in the key of \(key.rootNote.rawValue). Each color is a chord; lines connect root → 3rd → 5th within a voicing.",
+            connections: allConnections,
+            chordGroups: chordGroups
         )
     }
     
-    /// Generate familial hierarchy pattern - shows vertical chord relationships
-    static func familialHierarchyPattern(for key: Key, maxFret: Int = Constants.defaultFretCount) -> Pattern {
-        let rootNote = key.rootNote
-        var positions: [FretboardPosition] = []
+    // MARK: - Familial Hierarchy (vertical chord stacks)
+    
+    /// All seven diatonic chords as vertical triad stacks with roman numerals.
+    static func familialHierarchyPattern(
+        for key: Key,
+        maxFret: Int = Constants.defaultFretCount
+    ) -> Pattern {
+        var chordGroups: [ChordGroup] = []
+        var allPositions: [FretboardPosition] = []
+        var allConnections: [PatternConnection] = []
+        var seenCoords: Set<String> = []
         
-        // Familial hierarchy shows chord relationships vertically
-        // I, ii, iii, IV, V, vi, vii°
-        let scaleDegrees: [(interval: Int, isMajor: Bool)] = [
-            (0, true),   // I
-            (2, false),  // ii
-            (4, false),  // iii
-            (5, true),   // IV
-            (7, true),   // V
-            (9, false), // vi
-            (11, false) // vii°
-        ]
-        
-        for (interval, _) in scaleDegrees {
-            let chordRoot = rootNote.addingSemitones(interval)
-            let rootPositions = FretboardCalculator.positionsFor(note: chordRoot, maxFret: maxFret)
-            positions.append(contentsOf: rootPositions.map { pos in
-                FretboardPosition(
-                    string: pos.string,
-                    fret: pos.fret,
-                    note: pos.note,
-                    isRoot: interval == 0 // Mark the I chord as root
-                )
-            })
+        for degree in RSOGScaleDegree.majorKeyTriads {
+            // Prefer compact (vertical) voicings: smaller window emphasizes stacked shapes.
+            let group = buildChordGroup(
+                degree: degree,
+                key: key,
+                maxFret: maxFret,
+                connectionKind: .hierarchy,
+                maxVoicings: 4,
+                windowSize: 3,
+                preferVertical: true
+            )
+            chordGroups.append(group)
+            allConnections.append(contentsOf: group.connections)
+            
+            for pos in group.positions {
+                if seenCoords.insert(pos.coordinateKey).inserted {
+                    allPositions.append(pos)
+                }
+            }
         }
         
         return Pattern(
             name: "Familial Hierarchy - \(key.rootNote.rawValue)",
             type: .familialHierarchy,
             key: key,
+            positions: allPositions,
+            description: "Vertical hierarchy of all diatonic chords (I–vii°) in \(key.rootNote.rawValue). Each stack is a 1-3-5 triad labeled by roman numeral.",
+            connections: allConnections,
+            chordGroups: chordGroups
+        )
+    }
+    
+    // MARK: - Chord Group Builder
+    
+    private static func buildChordGroup(
+        degree: RSOGScaleDegree,
+        key: Key,
+        maxFret: Int,
+        connectionKind: ConnectionKind,
+        maxVoicings: Int,
+        windowSize: Int = 4,
+        preferVertical: Bool = false
+    ) -> ChordGroup {
+        let tones = degree.chordTones(in: key)
+        let role = ChordRole.from(degreeIndex: degree.degreeIndex)
+        
+        var voicings = RSOGTemplate.allTriadVoicings(
+            for: degree,
+            key: key,
+            maxFret: maxFret,
+            windowSize: windowSize
+        )
+        
+        if preferVertical {
+            // Prefer voicings with smaller fret span (more "stacked" vertically).
+            voicings.sort {
+                span(of: $0) < span(of: $1)
+            }
+        }
+        
+        // Thin out overlapping voicings so the display stays readable.
+        var selected: [RSOGTriadVoicing] = []
+        var occupied: Set<String> = []
+        for voicing in voicings {
+            let keys = Set(voicing.positions.map(\.coordinateKey))
+            // Allow mild overlap but skip near-duplicates.
+            let overlap = keys.intersection(occupied).count
+            if overlap >= 2 { continue }
+            selected.append(voicing)
+            occupied.formUnion(keys)
+            if selected.count >= maxVoicings { break }
+        }
+        
+        var positions: [FretboardPosition] = []
+        var connections: [PatternConnection] = []
+        var seen: Set<String> = []
+        
+        for voicing in selected {
+            let enriched = voicing.positions.map { pos -> FretboardPosition in
+                annotatedTriadPosition(
+                    pos,
+                    tones: tones,
+                    degree: degree,
+                    role: role,
+                    key: key
+                )
+            }
+            
+            // Connect in string order (vertical feel): root→3rd→5th by string descending.
+            let ordered = enriched.sorted { $0.string > $1.string }
+            for i in 0..<(ordered.count - 1) {
+                connections.append(PatternConnection(
+                    from: ordered[i],
+                    to: ordered[i + 1],
+                    kind: connectionKind
+                ))
+            }
+            
+            for pos in enriched {
+                if seen.insert(pos.coordinateKey).inserted {
+                    positions.append(pos)
+                }
+            }
+        }
+        
+        return ChordGroup(
+            romanNumeral: degree.romanNumeral,
+            quality: degree.quality,
+            root: tones.root,
+            scaleDegree: degree.degreeIndex,
+            chordRole: role,
             positions: positions,
-            description: "The natural chord progression hierarchy in the key of \(key.rootNote.rawValue)."
+            connections: connections
+        )
+    }
+    
+    private static func span(of voicing: RSOGTriadVoicing) -> Int {
+        let frets = voicing.positions.map(\.fret)
+        return (frets.max() ?? 0) - (frets.min() ?? 0)
+    }
+    
+    private static func annotatedTriadPosition(
+        _ pos: FretboardPosition,
+        tones: (root: Note, third: Note, fifth: Note),
+        degree: RSOGScaleDegree,
+        role: ChordRole?,
+        key: Key
+    ) -> FretboardPosition {
+        FretboardPosition(
+            string: pos.string,
+            fret: pos.fret,
+            note: pos.note,
+            isRoot: pos.note == tones.root,
+            scaleDegree: degree.degreeIndex,
+            chordRole: role,
+            isTriadRoot: pos.note == tones.root,
+            isTriadThird: pos.note == tones.third,
+            isTriadFifth: pos.note == tones.fifth
         )
     }
 }
-

@@ -49,12 +49,12 @@ struct FretboardCalculator {
         return positions
     }
     
+    /// Major-scale intervals from the tonic.
+    static let majorScaleIntervals = [0, 2, 4, 5, 7, 9, 11]
+    
     /// Get all notes in a key (major scale)
     static func notesInKey(_ key: Key) -> [Note] {
-        let root = key.rootNote
-        let majorScaleIntervals = [0, 2, 4, 5, 7, 9, 11] // W-W-H-W-W-W-H
-        
-        return majorScaleIntervals.map { root.addingSemitones($0) }
+        majorScaleIntervals.map { key.rootNote.addingSemitones($0) }
     }
     
     /// Check if a note is in a given key
@@ -62,34 +62,34 @@ struct FretboardCalculator {
         notesInKey(key).contains(note)
     }
     
-    /// Calculate spiral mapping pattern for a given key
-    static func spiralMappingPattern(for key: Key, maxFret: Int = Constants.defaultFretCount) -> Pattern {
-        let keyNotes = notesInKey(key)
-        var positions: [FretboardPosition] = []
-        
-        // Spiral mapping follows a vertical pattern across strings
-        for string in 1...Constants.numberOfStrings {
-            for fret in 0...maxFret {
-                let note = noteAt(string: string, fret: fret)
-                if keyNotes.contains(note) {
-                    let isRoot = note == key.rootNote
-                    positions.append(FretboardPosition(
-                        string: string,
-                        fret: fret,
-                        note: note,
-                        isRoot: isRoot
-                    ))
-                }
-            }
-        }
-        
-        return Pattern(
-            name: "Spiral Mapping - \(key.rootNote.rawValue)",
-            type: .spiralMapping,
-            key: key,
-            positions: positions,
-            description: "The spiral mapping pattern shows all notes in the key of \(key.rootNote.rawValue) across the fretboard."
+    /// Scale degree index (0–6) for a note in a major key, if diatonic.
+    static func scaleDegree(of note: Note, in key: Key) -> Int? {
+        let rootSemitones = key.rootNote.semitonesFromC
+        let interval = (note.semitonesFromC - rootSemitones + 12) % 12
+        return majorScaleIntervals.firstIndex(of: interval)
+    }
+    
+    /// Enrich a position with scale-degree metadata for the given key.
+    static func enrich(_ position: FretboardPosition, in key: Key) -> FretboardPosition {
+        let degree = scaleDegree(of: position.note, in: key)
+        return FretboardPosition(
+            id: position.id,
+            string: position.string,
+            fret: position.fret,
+            note: position.note,
+            isRoot: position.note == key.rootNote,
+            scaleDegree: degree ?? position.scaleDegree,
+            chordRole: position.chordRole,
+            blockType: position.blockType,
+            isTriadRoot: position.isTriadRoot,
+            isTriadThird: position.isTriadThird,
+            isTriadFifth: position.isTriadFifth
         )
+    }
+    
+    /// Calculate spiral mapping pattern for a given key (ordered path + connections).
+    static func spiralMappingPattern(for key: Key, maxFret: Int = Constants.defaultFretCount) -> Pattern {
+        PatternGenerator.spiralMappingPattern(for: key, maxFret: maxFret)
     }
 }
 
