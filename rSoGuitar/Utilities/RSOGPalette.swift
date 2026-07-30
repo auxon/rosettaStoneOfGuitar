@@ -39,4 +39,20 @@ enum RSOGPalette {
         case .jump:       return Color.yellow.opacity(0.5)
         }
     }
+    
+    /// Block overlay colors (HEAD / BRIDGE / TRIPLE).
+    static func blockColor(_ type: BlockType) -> Color {
+        switch type {
+        case .headBlock:
+            return Color(red: 0.4, green: 0.8, blue: 1.0)   // sky blue
+        case .bridgeBlock:
+            return Color(red: 0.4, green: 1.0, blue: 0.6)   // mint
+        case .tripleBlock:
+            return Color(red: 1.0, green: 0.7, blue: 0.3)   // amber
+        }
+    }
+    
+    static let diatonicRoot = Color(red: 0.3, green: 0.9, blue: 0.4)
+    static let diatonicNote = Color(red: 0.3, green: 0.9, blue: 0.4)
+    static let selectedNote = Color(red: 1.0, green: 0.3, blue: 0.3)
 }
