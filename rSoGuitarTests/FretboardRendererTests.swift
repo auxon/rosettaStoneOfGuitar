@@ -92,4 +92,11 @@ struct FretboardRendererTests {
         #expect(explorerLayout.stringY(1) < explorerLayout.stringY(6))
         #expect(lessonLayout.stringY(3) == explorerLayout.stringY(3))
     }
+    
+    @Test func hitTestRejectsOutOfRangeLocations() {
+        let layout = FretboardLayout(maxFret: 12, fretWidth: 40, stringSpacing: 30, labelOffset: 24)
+        #expect(layout.hitTest(at: CGPoint(x: 0, y: 15)) == nil) // left of label offset
+        #expect(layout.hitTest(at: CGPoint(x: 1000, y: 15)) == nil)
+        #expect(layout.hitTest(at: CGPoint(x: 40, y: -5)) == nil)
+    }
 }

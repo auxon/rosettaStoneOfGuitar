@@ -54,4 +54,15 @@ struct RSOGConceptInfoTests {
         #expect(vm.showFullPattern)
         #expect(vm.showPatternOverlay)
     }
+    
+    @Test func inspectingBlockSurfacesDetailPayload() {
+        let vm = FretboardViewModel()
+        let head = vm.blocks.first { $0.type == .headBlock }
+        #expect(head != nil)
+        vm.inspectBlock(head)
+        #expect(vm.inspectedBlock?.type == .headBlock)
+        #expect(!(vm.inspectedBlock?.positions.isEmpty ?? true))
+        vm.inspectBlock(nil)
+        #expect(vm.inspectedBlock == nil)
+    }
 }
