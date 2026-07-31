@@ -24,10 +24,12 @@ class TunerViewModel: ObservableObject {
     @Published var referencePitch: Double = 440.0  // A4 reference pitch (can be adjusted)
     @Published var centsFromTarget: Double = 0.0   // Cents offset from target string
     @Published var responsiveness: TunerResponsiveness = .fast  // Detection speed setting
+    @Published var setupError: String?
     
     private var audioEngine: AVAudioEngine?
     private var inputNode: AVAudioInputNode?
     private var actualSampleRate: Double = 44100.0  // Will be updated from audio format
+    private var isTapInstalled = false
     
     // Buffer size affects latency vs accuracy tradeoff
     // Smaller = faster response, larger = more accurate for low notes
@@ -41,6 +43,17 @@ class TunerViewModel: ObservableObject {
         ("E", 20.60), ("F", 21.83), ("F#", 23.12), ("G", 24.50),
         ("G#", 25.96), ("A", 27.50), ("A#", 29.14), ("B", 30.87)
     ]
+    
+    private enum TunerAudioError: LocalizedError {
+        case invalidFormat
+        
+        var errorDescription: String? {
+            switch self {
+            case .invalidFormat:
+                return "Microphone audio format is unavailable. Try again on a device with a working mic."
+            }
+        }
+    }
     
     init() {
         updateTargetStrings()
@@ -64,9 +77,6 @@ class TunerViewModel: ObservableObject {
             DispatchQueue.main.async {
                 self?.hasPermission = granted
                 self?.permissionDenied = !granted
-                if granted {
-                    self?.setupAudioEngine()
-                }
             }
         }
     }
@@ -85,41 +95,86 @@ class TunerViewModel: ObservableObject {
             return
         }
         
-        setupAudioEngine()
-        
-        guard let audioEngine = audioEngine else { return }
+        setupError = nil
+        teardownEngine()
         
         do {
+            // Playback-only session (from AudioService) yields a 0 Hz input format.
+            AudioService.shared.prepareForRecording()
+            try configureAudioSession()
+            try setupAudioEngine()
+            
+            guard let audioEngine else {
+                throw TunerAudioError.invalidFormat
+            }
             try audioEngine.start()
             isListening = true
         } catch {
-            print("Failed to start audio engine: \(error)")
+            print("Failed to start tuner: \(error)")
+            teardownEngine()
+            setupError = error.localizedDescription
             isListening = false
+            AudioService.shared.resumeAfterRecording()
         }
     }
     
     func stopListening() {
-        audioEngine?.stop()
-        audioEngine?.inputNode.removeTap(onBus: 0)
+        teardownEngine()
         isListening = false
+        AudioService.shared.resumeAfterRecording()
     }
     
-    private func setupAudioEngine() {
-        audioEngine = AVAudioEngine()
-        guard let audioEngine = audioEngine else { return }
+    private func configureAudioSession() throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(
+            .playAndRecord,
+            mode: .measurement,
+            options: [.defaultToSpeaker, .allowBluetooth]
+        )
+        try session.setPreferredSampleRate(44_100)
+        try session.setPreferredIOBufferDuration(0.005)
+        try session.setActive(true)
+    }
+    
+    private func setupAudioEngine() throws {
+        let engine = AVAudioEngine()
+        let input = engine.inputNode
         
-        inputNode = audioEngine.inputNode
-        guard let inputNode = inputNode else { return }
+        // Hardware input format is authoritative once the session is playAndRecord.
+        var format = input.inputFormat(forBus: 0)
+        if !Self.isValidAudioFormat(format) {
+            format = input.outputFormat(forBus: 0)
+        }
         
-        let format = inputNode.outputFormat(forBus: 0)
+        guard Self.isValidAudioFormat(format) else {
+            throw TunerAudioError.invalidFormat
+        }
         
-        // Get the actual sample rate from the hardware
         actualSampleRate = format.sampleRate
         print("Tuner: Using sample rate: \(actualSampleRate) Hz")
         
-        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { [weak self] buffer, _ in
+        input.installTap(onBus: 0, bufferSize: bufferSize, format: format) { [weak self] buffer, _ in
             self?.processAudioBuffer(buffer)
         }
+        isTapInstalled = true
+        audioEngine = engine
+        inputNode = input
+    }
+    
+    private func teardownEngine() {
+        if isTapInstalled {
+            audioEngine?.inputNode.removeTap(onBus: 0)
+            isTapInstalled = false
+        }
+        if audioEngine?.isRunning == true {
+            audioEngine?.stop()
+        }
+        audioEngine = nil
+        inputNode = nil
+    }
+    
+    private static func isValidAudioFormat(_ format: AVAudioFormat) -> Bool {
+        format.sampleRate > 0 && format.channelCount > 0
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {

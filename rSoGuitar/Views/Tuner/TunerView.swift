@@ -287,6 +287,14 @@ struct TunerView: View {
                     .multilineTextAlignment(.center)
             }
             
+            if let setupError = viewModel.setupError {
+                Text(setupError)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+            }
+            
             if viewModel.isListening {
                 HStack(spacing: 4) {
                     ForEach(0..<5) { i in

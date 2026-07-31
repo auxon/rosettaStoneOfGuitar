@@ -208,4 +208,25 @@ class AudioService: ObservableObject {
             self.currentNote = nil
         }
     }
+    
+    /// Yield the shared audio session so the tuner can open a recording route.
+    func prepareForRecording() {
+        stopAll()
+        if audioEngine.isRunning {
+            audioEngine.stop()
+        }
+    }
+    
+    /// Restore playback category/engine after the tuner releases the mic.
+    func resumeAfterRecording() {
+        do {
+            try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try audioSession.setActive(true)
+            if !audioEngine.isRunning {
+                try audioEngine.start()
+            }
+        } catch {
+            print("Failed to resume playback audio engine: \(error)")
+        }
+    }
 }
