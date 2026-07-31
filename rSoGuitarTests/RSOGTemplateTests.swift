@@ -208,8 +208,17 @@ struct RSOGTemplateTests {
     // MARK: - Key Independence (shape preserved)
     
     @Test func gMajorHeadHasSameSpacingShape() {
-        let head = BlockGenerator.headBlock(for: .G, maxFret: 12)
+        let head = BlockGenerator.headBlock(for: .G, maxFret: 15)
         #expect(head.positions.count == 6)
+        #expect(head.anchorFret == 7)
+        #expect(head.stringRange == 1...2)
+        
+        let expected: Set<String> = [
+            "1,7,B", "1,8,C", "1,10,D",
+            "2,7,F#", "2,8,G", "2,10,A"
+        ]
+        let actual = Set(head.positions.map { "\($0.string),\($0.fret),\($0.note.rawValue)" })
+        #expect(actual == expected)
         
         for string in head.stringRange {
             let frets = head.positions.filter { $0.string == string }.map(\.fret).sorted()
@@ -218,6 +227,29 @@ struct RSOGTemplateTests {
         
         let keyNotes = Set(FretboardCalculator.notesInKey(.G))
         #expect(head.positions.allSatisfy { keyNotes.contains($0.note) })
+    }
+    
+    @Test func gMajorPrimaryBridgePositions() {
+        let bridge = BlockGenerator.bridgeBlock(for: .G, maxFret: 15)
+        #expect(bridge.positions.count == 6)
+        #expect(bridge.anchorFret == 7)
+        #expect(bridge.stringRange == 4...5)
+        
+        // X-XX on D–A at the G-major primary anchor (fret 7)
+        let expected: Set<String> = [
+            "4,7,A", "4,9,B", "4,10,C",
+            "5,7,E", "5,9,F#", "5,10,G"
+        ]
+        let actual = Set(bridge.positions.map { "\($0.string),\($0.fret),\($0.note.rawValue)" })
+        #expect(actual == expected)
+    }
+    
+    @Test func cMajorHeadRepeatsAtOctaveWhenRangeAllows() {
+        let heads = RSOGTemplate.allHeadPlacements(for: .C, maxFret: 24)
+            .filter { $0.pair == RSOGStringPairs.primaryHeadPair }
+        let anchors = heads.map(\.anchor).sorted()
+        #expect(anchors.contains(0))
+        #expect(anchors.contains(12))
     }
     
     @Test func identifyHeadNearOpenPositionReturnsCanonicalHead() {

@@ -56,6 +56,25 @@ struct PatternGeneratorTests {
         #expect(pattern.positions.contains { $0.chordRole == .tonic })
     }
     
+    @Test func familyOfChordsHasAtLeastOneVoicingPerChord() {
+        let pattern = PatternGenerator.familyOfChordsPattern(for: .C, maxFret: 12)
+        for group in pattern.chordGroups {
+            // A voicing is evidenced by triad connections or ≥3 distinct chord-tone positions.
+            let toneClasses = Set(group.positions.compactMap { pos -> String? in
+                if pos.isTriadRoot { return "R" }
+                if pos.isTriadThird { return "3" }
+                if pos.isTriadFifth { return "5" }
+                return nil
+            })
+            #expect(toneClasses == Set(["R", "3", "5"]), "Incomplete triad for \(group.romanNumeral)")
+            #expect(!group.connections.isEmpty || group.positions.count >= 3)
+        }
+        
+        // Horizontal separation: the three family roots differ.
+        #expect(Set(pattern.chordGroups.map(\.root)).count == 3)
+        #expect(Set(pattern.positions.map(\.fret)).count >= 3)
+    }
+    
     // MARK: - Familial Hierarchy
     
     @Test func familialHierarchyHasSevenDegrees() {
@@ -78,10 +97,14 @@ struct PatternGeneratorTests {
             // Hierarchy connections run along the stack.
             if !group.connections.isEmpty {
                 #expect(group.connections.allSatisfy { $0.kind == .hierarchy })
+                let stringDelta = RSOGTestSupport.meanAbsoluteStringDelta(in: group.connections)
+                let fretDelta = RSOGTestSupport.meanAbsoluteFretDelta(in: group.connections)
+                #expect(stringDelta >= fretDelta)
             }
         }
         
         #expect(!pattern.connections.isEmpty)
+        #expect(Set(pattern.chordGroups.map(\.scaleDegree)).count == 7)
     }
     
     // MARK: - Spiral Mapping
