@@ -175,7 +175,7 @@ struct PatternGenerator {
             type: .familyOfChords,
             key: key,
             positions: allPositions,
-            description: "Horizontal family of triad voicings (I, IV, V) in the key of \(key.rootNote.rawValue). Each color is a chord; lines connect root → 3rd → 5th within a voicing.",
+            description: "Horizontal family of triad voicings — Papa, Mama, oBro (I, IV, V) — in the key of \(key.rootNote.rawValue). Each color is a chord; lines connect root → 3rd → 5th within a voicing.",
             connections: allConnections,
             chordGroups: chordGroups
         )
@@ -219,7 +219,7 @@ struct PatternGenerator {
             type: .familialHierarchy,
             key: key,
             positions: allPositions,
-            description: "Vertical hierarchy of all diatonic chords (I–vii°) in \(key.rootNote.rawValue). Each stack is a 1-3-5 triad labeled by roman numeral.",
+            description: "Vertical hierarchy of all diatonic chords in \(key.rootNote.rawValue) — Papa, yBro, aBoy, Mama, oBro, oSis, ySis (I–vii°). Each stack is a 1-3-5 triad labeled by family name.",
             connections: allConnections,
             chordGroups: chordGroups
         )
@@ -268,6 +268,7 @@ struct PatternGenerator {
         
         var positions: [FretboardPosition] = []
         var connections: [PatternConnection] = []
+        var chordVoicings: [ChordVoicing] = []
         var seen: Set<String> = []
         
         for voicing in selected {
@@ -280,6 +281,8 @@ struct PatternGenerator {
                     key: key
                 )
             }
+            
+            chordVoicings.append(ChordVoicing(positions: enriched))
             
             // Connect in string order (vertical feel): root→3rd→5th by string descending.
             let ordered = enriched.sorted { $0.string > $1.string }
@@ -305,7 +308,8 @@ struct PatternGenerator {
             scaleDegree: degree.degreeIndex,
             chordRole: role,
             positions: positions,
-            connections: connections
+            connections: connections,
+            voicings: chordVoicings
         )
     }
     

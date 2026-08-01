@@ -410,21 +410,23 @@ enum FretboardRenderer {
         pattern: Pattern,
         showLabels: Bool = true
     ) {
-        drawConnections(context: &context, layout: layout, connections: pattern.connections)
+        // Spiral / jump paths still draw as lines; triad outlines replace connection clutter
+        // for Family of Chords / Familial Hierarchy.
+        let hasChordShapes = pattern.chordGroups.contains { !$0.voicings.isEmpty }
+        if !hasChordShapes {
+            drawConnections(context: &context, layout: layout, connections: pattern.connections)
+        }
         
         if !pattern.chordGroups.isEmpty {
+            var occupiedLabelRects: [CGRect] = []
             for group in pattern.chordGroups {
-                let color = RSOGPalette.color(for: group)
-                for position in group.positions where position.fret <= layout.maxFret {
-                    let p = layout.point(for: position)
-                    let radius: CGFloat = (position.isTriadRoot || position.isRoot) ? 10 : 7
-                    fillCircle(context: &context, center: p, radius: radius, color: color.opacity(0.85))
-                    strokeCircle(context: &context, center: p, radius: radius, color: .white.opacity(0.7), lineWidth: 1)
-                }
-                
-                if showLabels {
-                    drawChordGroupLabel(context: &context, layout: layout, group: group)
-                }
+                drawChordGroupShapes(
+                    context: &context,
+                    layout: layout,
+                    group: group,
+                    showLabels: showLabels,
+                    occupiedLabelRects: &occupiedLabelRects
+                )
             }
         } else {
             for position in pattern.positions where position.fret <= layout.maxFret {
@@ -439,6 +441,63 @@ enum FretboardRenderer {
                 let p = layout.point(for: position)
                 let radius: CGFloat = position.isRoot ? 10 : 7
                 fillCircle(context: &context, center: p, radius: radius, color: color.opacity(0.85))
+            }
+        }
+    }
+    
+    /// Outline each triad voicing so Papa / Mama / yBro shapes read as zones, not loose dots.
+    private static func drawChordGroupShapes(
+        context: inout GraphicsContext,
+        layout: FretboardLayout,
+        group: ChordGroup,
+        showLabels: Bool,
+        occupiedLabelRects: inout [CGRect]
+    ) {
+        let color = RSOGPalette.color(for: group)
+        let shapes = group.voicings.isEmpty
+            ? [ChordVoicing(positions: group.positions)]
+            : group.voicings
+        
+        for voicing in shapes {
+            let visible = voicing.positions.filter { $0.fret <= layout.maxFret }
+            guard visible.count >= 2 else { continue }
+            
+            let outlineRect = blockOutlineRect(
+                layout: layout,
+                positions: visible,
+                offset: .zero,
+                padding: 8
+            )
+            drawBlockOutline(
+                context: &context,
+                rect: outlineRect,
+                color: color,
+                lineWidth: 2.0,
+                fillOpacity: 0.08
+            )
+            
+            for position in visible {
+                let p = layout.point(for: position)
+                let isRoot = position.isTriadRoot || position.isRoot
+                // Hollow pips (block style); slightly larger pip on the triad root.
+                strokeCircle(
+                    context: &context,
+                    center: p,
+                    radius: isRoot ? 4.5 : 3.5,
+                    color: color.opacity(0.95),
+                    lineWidth: isRoot ? 2.0 : 1.5
+                )
+            }
+            
+            if showLabels {
+                drawChordVoicingLabel(
+                    context: &context,
+                    layout: layout,
+                    group: group,
+                    outlineRect: outlineRect,
+                    color: color,
+                    occupiedRects: &occupiedLabelRects
+                )
             }
         }
     }
@@ -464,30 +523,52 @@ enum FretboardRenderer {
         }
     }
     
-    private static func drawChordGroupLabel(
+    private static func drawChordVoicingLabel(
         context: inout GraphicsContext,
         layout: FretboardLayout,
-        group: ChordGroup
+        group: ChordGroup,
+        outlineRect: CGRect,
+        color: Color,
+        occupiedRects: inout [CGRect]
     ) {
-        guard let labelPos = group.positions
-            .filter({ $0.fret <= layout.maxFret && ($0.isTriadRoot || $0.isRoot) })
-            .sorted(by: { $0.fret < $1.fret })
-            .first
-            ?? group.positions.filter({ $0.fret <= layout.maxFret }).sorted(by: { $0.fret < $1.fret }).first
-        else { return }
+        let title = group.familyName
+        let fontSize: CGFloat = 10
+        let labelWidth = CGFloat(max(30, title.count * 7 + 10))
+        let labelHeight: CGFloat = 16
+        let midX = outlineRect.midX
         
-        let p = layout.point(for: labelPos)
-        let color = RSOGPalette.color(for: group)
-        let width = CGFloat(max(20, group.romanNumeral.count * 8))
-        let rect = CGRect(x: p.x - width / 2, y: p.y - 26, width: width, height: 14)
-        var bg = Path()
-        bg.addRoundedRect(in: rect, cornerSize: CGSize(width: 3, height: 3))
-        context.fill(bg, with: .color(color.opacity(0.95)))
+        let candidates: [CGPoint] = [
+            CGPoint(x: midX, y: outlineRect.minY - labelHeight * 0.65),
+            CGPoint(x: midX, y: outlineRect.maxY + labelHeight * 0.65),
+            CGPoint(x: midX, y: outlineRect.minY + labelHeight * 0.85),
+            CGPoint(x: outlineRect.minX + labelWidth * 0.55, y: outlineRect.minY - labelHeight * 0.65),
+            CGPoint(x: outlineRect.maxX - labelWidth * 0.55, y: outlineRect.minY - labelHeight * 0.65)
+        ]
         
-        let text = Text(group.romanNumeral)
-            .font(.system(size: 10, weight: .bold))
-            .foregroundColor(.white)
-        context.draw(text, at: CGPoint(x: p.x, y: p.y - 19))
+        for center in candidates {
+            let rect = CGRect(
+                x: center.x - labelWidth / 2,
+                y: center.y - labelHeight / 2,
+                width: labelWidth,
+                height: labelHeight
+            )
+            guard rect.minY >= -2,
+                  rect.maxY <= layout.size.height + 2 || layout.size.height == 0,
+                  !occupiedRects.contains(where: { $0.insetBy(dx: -3, dy: -2).intersects(rect) })
+            else { continue }
+            
+            var bg = Path()
+            bg.addRoundedRect(in: rect, cornerSize: CGSize(width: 4, height: 4))
+            context.fill(bg, with: .color(color.opacity(0.2)))
+            context.stroke(bg, with: .color(color), lineWidth: 1.25)
+            
+            let text = Text(title)
+                .font(.system(size: fontSize, weight: .bold))
+                .foregroundColor(color)
+            context.draw(text, at: center)
+            occupiedRects.append(rect)
+            return
+        }
     }
     
     // MARK: Base note dots

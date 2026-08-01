@@ -31,6 +31,15 @@ struct RSOGTemplateTests {
         #expect(RSOGSpacingPattern.headOffsets != RSOGSpacingPattern.bridgeOffsets)
     }
     
+    @Test func familyNamesMatchRSOGConvention() {
+        let expected = ["Papa", "yBro", "aBoy", "Mama", "oBro", "oSis", "ySis"]
+        #expect(RSOGScaleDegree.familyNameOrder == expected)
+        #expect(RSOGScaleDegree.majorKeyTriads.map(\.familyName) == expected)
+        // Fred Pool: yBro is the Dorian / ii chord.
+        #expect(RSOGScaleDegree.familyName(forDegreeIndex: 1) == "yBro")
+        #expect(RSOGScaleDegree.majorKeyTriads[1].romanNumeral == "ii")
+    }
+    
     @Test func tripleSpacingIsX_X_X() {
         #expect(RSOGSpacingPattern.tripleOffsets == [0, 2, 4])
         #expect(RSOGTemplate.matchesSpacing([0, 2, 4], pattern: RSOGSpacingPattern.tripleOffsets))

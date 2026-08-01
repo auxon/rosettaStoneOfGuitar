@@ -33,9 +33,9 @@ enum RSOGConceptInfo {
         case .jumping:
             return "Move freely horizontally without hitting a bad note — simple rules that keep you in key."
         case .familyOfChords:
-            return "See how related chords sit across the fretboard in the horizontal direction (I, IV, V triad family)."
+            return "See how related chords sit across the fretboard in the horizontal direction — Papa, Mama, and oBro (I, IV, V)."
         case .familialHierarchy:
-            return "Learn the relative positions of all naturally occurring chords in the vertical direction (I–vii°)."
+            return "Learn the relative positions of all naturally occurring chords in the vertical direction — Papa through ySis."
         }
     }
     
@@ -46,9 +46,9 @@ enum RSOGConceptInfo {
         case .jumping:
             return "Jumping is horizontal freedom inside the key. From any in-key note you can leap to other frets on the same string that belong to the pattern. The BRIDGE block is the transitional zone that makes position shifts feel natural."
         case .familyOfChords:
-            return "The Family of Chords shows I, IV, and V as compact 1–3–5 triad voicings spread horizontally. Once you can see the family, accompaniment and key-center chords stop being a scavenger hunt."
+            return "The Family of Chords shows Papa, Mama, and oBro (I, IV, V) as compact 1–3–5 triad voicings spread horizontally. Once you can see the family, accompaniment and key-center chords stop being a scavenger hunt."
         case .familialHierarchy:
-            return "Familial Hierarchy stacks every diatonic chord (I, ii, iii, IV, V, vi, vii°) vertically so you can see how the family is ordered — not just where the roots are, but how the triad shapes relate up and down the neck."
+            return "Familial Hierarchy stacks every diatonic chord — Papa, yBro, aBoy, Mama, oBro, oSis, ySis (I–vii°) — vertically so you can see how the family is ordered. Family nicknames are the primary labels; roman numerals are the traditional translation."
         }
     }
     

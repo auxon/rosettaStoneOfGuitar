@@ -85,7 +85,7 @@ struct Chord: Identifiable, Codable {
             rootNote: tones.root,
             quality: degree.quality,
             positions: positions,
-            description: "\(degree.romanNumeral) — \(tones.root.rawValue) \(qualityName) in \(key.rootNote.rawValue) major",
+            description: "\(degree.familyName) (\(degree.romanNumeral)) — \(tones.root.rawValue) \(qualityName) in \(key.rootNote.rawValue) major",
             scaleDegree: degree.degreeIndex,
             romanNumeral: degree.romanNumeral,
             chordRole: ChordRole.from(degreeIndex: degree.degreeIndex)

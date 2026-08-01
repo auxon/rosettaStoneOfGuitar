@@ -143,6 +143,29 @@ struct RSOGScaleDegree: Equatable {
         RSOGScaleDegree(degreeIndex: 6, intervalFromRoot: 11, quality: .diminished, romanNumeral: "vii°")
     ]
     
+    /// rSoG familial nickname (Papa / Mama / yBro …) — primary teaching label.
+    var familyName: String { Self.familyName(forDegreeIndex: degreeIndex) }
+    
+    /// Canonical family names used on rsoguitar.com / Pool’s materials.
+    /// Mapped to modes: Papa=Ionian, yBro=Dorian, aBoy=Phrygian, Mama=Lydian,
+    /// oBro=Mixolydian, oSis=Aeolian, ySis=Locrian.
+    static func familyName(forDegreeIndex index: Int) -> String {
+        switch index {
+        case 0: return "Papa"
+        case 1: return "yBro"
+        case 2: return "aBoy"
+        case 3: return "Mama"
+        case 4: return "oBro"
+        case 5: return "oSis"
+        case 6: return "ySis"
+        default: return "—"
+        }
+    }
+    
+    static let familyNameOrder: [String] = [
+        "Papa", "yBro", "aBoy", "Mama", "oBro", "oSis", "ySis"
+    ]
+    
     func chordTones(in key: Key) -> (root: Note, third: Note, fifth: Note) {
         let root = key.rootNote.addingSemitones(intervalFromRoot)
         let thirdInterval: Int

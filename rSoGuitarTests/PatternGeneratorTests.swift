@@ -21,6 +21,9 @@ struct PatternGeneratorTests {
         let numerals = pattern.chordGroups.map(\.romanNumeral)
         #expect(numerals == ["I", "IV", "V"])
         
+        let familyNames = pattern.chordGroups.map(\.familyName)
+        #expect(familyNames == ["Papa", "Mama", "oBro"])
+        
         let roots = pattern.chordGroups.map(\.root)
         #expect(roots == [.C, .F, .G])
     }
@@ -30,6 +33,11 @@ struct PatternGeneratorTests {
         
         for group in pattern.chordGroups {
             #expect(group.positions.count >= 3, "Group \(group.romanNumeral) should have triad tones")
+            #expect(!group.voicings.isEmpty, "Group \(group.familyName) needs outlineable voicings")
+            
+            for voicing in group.voicings {
+                #expect(voicing.positions.count == 3, "\(group.familyName) voicing should be a 3-note triad shape")
+            }
             
             let hasRoot = group.positions.contains(where: \.isTriadRoot)
             let hasThird = group.positions.contains(where: \.isTriadThird)
@@ -85,6 +93,10 @@ struct PatternGeneratorTests {
         
         let numerals = pattern.chordGroups.map(\.romanNumeral)
         #expect(numerals == ["I", "ii", "iii", "IV", "V", "vi", "vii°"])
+        
+        let familyNames = pattern.chordGroups.map(\.familyName)
+        #expect(familyNames == RSOGScaleDegree.familyNameOrder)
+        #expect(pattern.chordGroups.first?.displayLabel == "Papa (I)")
     }
     
     @Test func familialHierarchyVoicingsAreVerticalStacks() {
@@ -92,7 +104,9 @@ struct PatternGeneratorTests {
         
         for group in pattern.chordGroups {
             #expect(!group.positions.isEmpty, "Missing voicing for \(group.romanNumeral)")
+            #expect(!group.voicings.isEmpty, "Missing outlineable shapes for \(group.familyName)")
             #expect(group.positions.contains { $0.isTriadRoot })
+            #expect(group.voicings.allSatisfy { $0.positions.count == 3 })
             
             // Hierarchy connections run along the stack.
             if !group.connections.isEmpty {

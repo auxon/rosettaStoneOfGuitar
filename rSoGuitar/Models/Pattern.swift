@@ -175,6 +175,17 @@ struct PatternConnection: Identifiable, Codable, Equatable {
     }
 }
 
+/// One compact triad shape (typically 3 notes on 3 strings) used for outlined display.
+struct ChordVoicing: Identifiable, Codable, Equatable {
+    let id: UUID
+    let positions: [FretboardPosition]
+    
+    init(id: UUID = UUID(), positions: [FretboardPosition]) {
+        self.id = id
+        self.positions = positions
+    }
+}
+
 struct ChordGroup: Identifiable, Codable, Equatable {
     let id: UUID
     let romanNumeral: String
@@ -182,8 +193,11 @@ struct ChordGroup: Identifiable, Codable, Equatable {
     let root: Note
     let scaleDegree: Int
     let chordRole: ChordRole?
+    /// Flattened union of all voicing notes (legacy / hit-testing).
     let positions: [FretboardPosition]
     let connections: [PatternConnection]
+    /// Individual triad shapes — each is outlined separately on the fretboard.
+    let voicings: [ChordVoicing]
     
     init(
         id: UUID = UUID(),
@@ -193,7 +207,8 @@ struct ChordGroup: Identifiable, Codable, Equatable {
         scaleDegree: Int,
         chordRole: ChordRole? = nil,
         positions: [FretboardPosition],
-        connections: [PatternConnection] = []
+        connections: [PatternConnection] = [],
+        voicings: [ChordVoicing] = []
     ) {
         self.id = id
         self.romanNumeral = romanNumeral
@@ -203,6 +218,20 @@ struct ChordGroup: Identifiable, Codable, Equatable {
         self.chordRole = chordRole ?? ChordRole.from(degreeIndex: scaleDegree)
         self.positions = positions
         self.connections = connections
+        // If callers only pass flat positions, treat them as a single shape when possible.
+        self.voicings = voicings.isEmpty && !positions.isEmpty
+            ? [ChordVoicing(positions: positions)]
+            : voicings
+    }
+    
+    /// rSoG family nickname (Papa, Mama, yBro, …) — primary display label.
+    var familyName: String {
+        RSOGScaleDegree.familyName(forDegreeIndex: scaleDegree)
+    }
+    
+    /// Family name with roman numeral as a secondary translation, e.g. "Papa (I)".
+    var displayLabel: String {
+        "\(familyName) (\(romanNumeral))"
     }
 }
 

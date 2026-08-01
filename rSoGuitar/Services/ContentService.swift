@@ -145,20 +145,20 @@ class ContentService {
         let familyPattern = PatternGenerator.familyOfChordsPattern(for: .C)
         let familyContent: [LessonContent] = [
             .text("Family of Chords reveals the relationship between chord positions across the fretboard in the horizontal direction."),
-            .text("In a major key the primary family is I, IV, and V — shown here as real 1–3–5 triad voicings, not just root dots. Each color is a chord; lines connect tones inside a voicing."),
+            .text("In a major key the primary family is Papa, Mama, and oBro (I, IV, V) — shown here as outlined 1–3–5 triad shapes, not just loose note dots. Each color is a chord family member."),
             .text("The TRIPLE block is the 9-note X-X-X landmark — every other half-step across three strings — that sits inside the same repeating diatonic pattern as HEAD and BRIDGE."),
             .fretboardDemo(familyPattern),
             .text("Once you can see the family horizontally, accompaniment stops being a scavenger hunt — you already know where the next chord lives relative to the one you are on."),
             .exercise(Exercise(
                 title: "Family of Chords Practice",
-                instructions: "Identify I (blue), IV (green), and V (orange). Enable the TRIPLE block and notice how those chords sit inside the X-X-X landmark.",
+                instructions: "Identify Papa (I, blue), Mama (IV, green), and oBro (V, orange). Enable the TRIPLE block and notice how those chords sit inside the X-X-X landmark.",
                 pattern: familyPattern
             ))
         ]
         
         lessons.append(Lesson(
             title: "Family of Chords",
-            description: "Discover horizontal I–IV–V triad relationships on the fretboard",
+            description: "Discover horizontal Papa–Mama–oBro (I–IV–V) triad relationships on the fretboard",
             content: familyContent,
             isPremium: true,
             order: 4,
@@ -169,19 +169,19 @@ class ContentService {
         let hierarchyPattern = PatternGenerator.familialHierarchyPattern(for: .C)
         let hierarchyContent: [LessonContent] = [
             .text("Familial Hierarchy teaches the relative positions of all naturally occurring chords in the vertical direction."),
-            .text("Every diatonic chord — I, ii, iii, IV, V, vi, vii° — appears as a compact 1–3–5 stack labeled by roman numeral. Moving vertically shows how the family is ordered."),
+            .text("Every diatonic chord — Papa, yBro, aBoy, Mama, oBro, oSis, ySis (I–vii°) — appears as an outlined compact 1–3–5 shape labeled by family name. Roman numerals are the traditional translation. Moving vertically shows how the family is ordered."),
             .fretboardDemo(hierarchyPattern),
             .text("Mastering the hierarchy helps you understand song structure and invent progressions without leaving the pattern."),
             .exercise(Exercise(
                 title: "Familial Hierarchy Practice",
-                instructions: "Find I, IV, and V first, then locate ii, iii, vi, and vii°. Keep the TRIPLE block on so each stack reads as a chord shape, not a scatter of roots.",
+                instructions: "Find Papa, Mama, and oBro first, then locate yBro, aBoy, oSis, and ySis. Keep the TRIPLE block on so each stack reads as a chord shape, not a scatter of roots.",
                 pattern: hierarchyPattern
             ))
         ]
         
         lessons.append(Lesson(
             title: "Familial Hierarchy",
-            description: "See all diatonic chords stacked vertically by scale degree",
+            description: "See Papa through ySis stacked vertically as the full chord family",
             content: hierarchyContent,
             isPremium: true,
             order: 5,

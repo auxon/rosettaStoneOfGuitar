@@ -77,7 +77,7 @@ struct ConceptView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(pattern.description)
                         if !pattern.chordGroups.isEmpty {
-                            Text("Chords: " + pattern.chordGroups.map(\.romanNumeral).joined(separator: " · "))
+                            Text("Chords: " + pattern.chordGroups.map(\.displayLabel).joined(separator: " · "))
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
