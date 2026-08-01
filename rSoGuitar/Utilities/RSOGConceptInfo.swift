@@ -70,7 +70,8 @@ enum RSOGConceptInfo {
     static func demoBlocks(for type: PatternType) -> Set<BlockType> {
         switch type {
         case .spiralMapping:
-            return [.headBlock]
+            // Full landmark set — Concepts legend can also toggle each type.
+            return [.headBlock, .bridgeBlock, .tripleBlock]
         case .jumping:
             return [.bridgeBlock]
         case .familyOfChords, .familialHierarchy:
@@ -92,7 +93,7 @@ enum RSOGConceptInfo {
         switch type {
         case .headBlock: return "XX-X · entry milestone"
         case .bridgeBlock: return "X-XX · transitional zone"
-        case .tripleBlock: return "X-X-X · stacked 1-3-5 triads"
+        case .tripleBlock: return "X-X-X · every other half-step (9 notes)"
         }
     }
     
@@ -103,7 +104,7 @@ enum RSOGConceptInfo {
         case .bridgeBlock:
             return "The BRIDGE block is a 6-note X-XX pattern — one fret, a gap, then two adjacent frets — on the middle string pair (D and A). It connects HEAD and TRIPLE regions and supports horizontal jumping and position shifts."
         case .tripleBlock:
-            return "The TRIPLE block stacks three diatonic 1–3–5 triads (often I–iii–V) on three consecutive strings. It is the chord-building landmark that makes available harmony visible anywhere on the neck."
+            return "The TRIPLE block is a 9-note X-X-X pattern — three notes per string on every other half-step (frets 0, 2, 4 relative to the anchor) across three consecutive strings. It is always that spacing, never a variable shape."
         }
     }
     

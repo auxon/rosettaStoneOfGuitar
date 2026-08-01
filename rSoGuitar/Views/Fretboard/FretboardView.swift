@@ -23,8 +23,8 @@ struct FretboardView: View {
             // Fretboard
             ScrollView([.horizontal, .vertical], showsIndicators: true) {
                 fretboardCanvas
-                    .frame(minWidth: CGFloat(viewModel.maxFret + 1) * fretWidth + 24,
-                           minHeight: CGFloat(Constants.numberOfStrings) * stringSpacing)
+                    .frame(width: canvasMinWidth, height: canvasMinHeight)
+                    .background(viewModel.showInfiniteBassPattern ? Color.white : Color.clear)
                     .padding()
             }
         }
@@ -33,6 +33,20 @@ struct FretboardView: View {
         .sheet(item: $viewModel.inspectedBlock) { block in
             BlockDetailSheet(block: block)
         }
+    }
+    
+    private var canvasMinWidth: CGFloat {
+        CGFloat(viewModel.maxFret + 1) * fretWidth + 24 + (viewModel.showInfiniteBassPattern ? 80 : 0)
+    }
+    
+    private var canvasMinHeight: CGFloat {
+        if viewModel.showInfiniteBassPattern {
+            let total = FretboardLayout.infiniteBassVirtualCount(
+                extendedStringCount: viewModel.extendedStringCount
+            )
+            return CGFloat(total) * stringSpacing
+        }
+        return CGFloat(Constants.numberOfStrings) * stringSpacing
     }
     
     private var controlsView: some View {
@@ -343,40 +357,30 @@ struct FretboardView: View {
                 .gesture(
                     DragGesture(minimumDistance: 5)
                         .onChanged { value in
-                            let totalStrings = viewModel.showInfiniteBassPattern ? viewModel.extendedStringCount : Constants.numberOfStrings
-                            let calculatedFretWidth = geometry.size.width / CGFloat(viewModel.maxFret + 1)
-                            let calculatedStringSpacing = geometry.size.height / CGFloat(totalStrings)
+                            let layout = currentLayout(for: geometry.size)
                             
                             // Check if we're in infinite bass pattern mode and should shift the pattern
                             if viewModel.showInfiniteBassPattern && viewModel.draggedBlockId == nil {
-                                // Shift the pattern based on drag
-                                let fretDelta = Int(round(value.translation.width / calculatedFretWidth))
-                                let stringDelta = Int(round(-value.translation.height / calculatedStringSpacing))
+                                let fretDelta = Int(round(value.translation.width / layout.fretWidth))
+                                let stringDelta = Int(round(-value.translation.height / layout.stringSpacing))
                                 if abs(fretDelta) > 0 || abs(stringDelta) > 0 {
                                     viewModel.shiftPattern(fretDelta: fretDelta, stringDelta: stringDelta)
                                 }
                             } else {
-                                // Block hit-testing uses the physical 6-string layout.
-                                let blockStringSpacing = geometry.size.height / CGFloat(Constants.numberOfStrings)
-                                handleDragChanged(value, fretWidth: calculatedFretWidth, stringSpacing: blockStringSpacing)
+                                handleDragChanged(value, fretWidth: layout.fretWidth, stringSpacing: layout.stringSpacing)
                             }
                         }
                         .onEnded { value in
-                            let totalStrings = viewModel.showInfiniteBassPattern ? viewModel.extendedStringCount : Constants.numberOfStrings
-                            let calculatedFretWidth = geometry.size.width / CGFloat(viewModel.maxFret + 1)
-                            let calculatedStringSpacing = geometry.size.height / CGFloat(totalStrings)
-                            let blockStringSpacing = geometry.size.height / CGFloat(Constants.numberOfStrings)
+                            let layout = currentLayout(for: geometry.size)
                             
                             if viewModel.draggedBlockId == nil {
-                                // If not dragging a block, treat as tap
                                 handleTap(
                                     at: value.location,
-                                    fretWidth: calculatedFretWidth,
-                                    stringSpacing: blockStringSpacing
+                                    fretWidth: layout.fretWidth,
+                                    stringSpacing: layout.stringSpacing
                                 )
                             } else {
-                                // End block drag
-                                handleDragEnded(value, fretWidth: calculatedFretWidth, stringSpacing: blockStringSpacing)
+                                handleDragEnded(value, fretWidth: layout.fretWidth, stringSpacing: layout.stringSpacing)
                             }
                         }
                 )
@@ -407,17 +411,36 @@ struct FretboardView: View {
     
     private func drawFretboard(context: GraphicsContext, size: CGSize) {
         var context = context
-        let totalStrings = viewModel.showInfiniteBassPattern ? viewModel.extendedStringCount : Constants.numberOfStrings
-        let fretWidth = size.width / CGFloat(viewModel.maxFret + 1)
-        let stringSpacing = size.height / CGFloat(totalStrings)
         
-        // Standard layout: string 1 (high E) at top. Used for blocks/patterns/notes.
-        let layout = FretboardLayout(
+        let layout: FretboardLayout
+        if viewModel.showInfiniteBassPattern {
+            layout = FretboardLayout.infiniteBass(
+                canvasWidth: size.width,
+                maxFret: viewModel.maxFret,
+                stringSpacing: stringSpacing,
+                extendedStringCount: viewModel.extendedStringCount
+            )
+            // Match GeometryReader-provided size (width may differ slightly from minWidth).
+            var fitted = layout
+            fitted.size = size
+            fitted.originY = size.height / 2 - CGFloat(Constants.numberOfStrings) / 2 * fitted.stringSpacing
+            fitted.fretWidth = max(1, size.width - fitted.labelOffset) / CGFloat(viewModel.maxFret + 1)
+            
+            FretboardRenderer.drawInfiniteBassScene(
+                context: &context,
+                layout: fitted,
+                positions: viewModel.infiniteBassPattern
+            )
+            // Wallpaper mode matches the rSoG infinite-bass reference: spheres only.
+            return
+        }
+        
+        let fretWidth = size.width / CGFloat(viewModel.maxFret + 1)
+        let stringSpacing = size.height / CGFloat(Constants.numberOfStrings)
+        layout = FretboardLayout(
             maxFret: viewModel.maxFret,
             fretWidth: fretWidth,
-            stringSpacing: viewModel.showInfiniteBassPattern
-                ? size.height / CGFloat(Constants.numberOfStrings)
-                : stringSpacing,
+            stringSpacing: stringSpacing,
             labelOffset: 24,
             stringCount: Constants.numberOfStrings,
             size: size
@@ -425,27 +448,7 @@ struct FretboardView: View {
         
         // Frets
         FretboardRenderer.drawGrid(context: &context, layout: layout, drawFrets: true, drawStrings: false)
-        
-        // Strings — extended virtual strings when infinite bass is on
-        if viewModel.showInfiniteBassPattern {
-            let stringRange = (1 - viewModel.extendedStringCount / 2 + viewModel.patternOffset.string)...(Constants.numberOfStrings + viewModel.extendedStringCount / 2 + viewModel.patternOffset.string)
-            let physicalStringCenter = CGFloat(Constants.numberOfStrings) / 2.0 + 0.5
-            for virtualString in stringRange {
-                let virtualStringOffset = CGFloat(virtualString - Int(physicalStringCenter))
-                let y = size.height / 2.0 + virtualStringOffset * stringSpacing
-                let isPhysical = virtualString >= 1 && virtualString <= Constants.numberOfStrings
-                var path = Path()
-                path.move(to: CGPoint(x: layout.labelOffset, y: y))
-                path.addLine(to: CGPoint(x: size.width, y: y))
-                context.stroke(
-                    path,
-                    with: .color(isPhysical ? Color.gray : Color.gray.opacity(0.3)),
-                    lineWidth: isPhysical ? 2 : 0.5
-                )
-            }
-        } else {
-            FretboardRenderer.drawGrid(context: &context, layout: layout, drawFrets: false, drawStrings: true)
-        }
+        FretboardRenderer.drawGrid(context: &context, layout: layout, drawFrets: false, drawStrings: true)
         
         if viewModel.showBlocks && !viewModel.selectedBlockTypes.isEmpty {
             if viewModel.showFullPattern {
@@ -466,14 +469,10 @@ struct FretboardView: View {
                 blocks: viewModel.blocks,
                 selectedTypes: viewModel.selectedBlockTypes,
                 offsets: offsets,
-                showRegions: true,
-                showSpacingMarkers: true,
-                showBrackets: true
+                showOutlines: true,
+                showNotePips: true,
+                showLabels: true
             )
-        }
-        
-        if viewModel.showInfiniteBassPattern {
-            drawInfiniteBassPattern(context: context, size: size, fretWidth: fretWidth, stringSpacing: stringSpacing)
         }
         
         if viewModel.showCAGED {
@@ -516,39 +515,6 @@ struct FretboardView: View {
             highlightedKeys: highlighted,
             suppressedKeys: suppressed
         )
-    }
-    
-    private func drawInfiniteBassPattern(context: GraphicsContext, size: CGSize, fretWidth: CGFloat, stringSpacing: CGFloat) {
-        let labelOffset: CGFloat = 24
-        
-        // Calculate the center position (physical strings 1-6 are centered)
-        let physicalStringCenter = CGFloat(Constants.numberOfStrings) / 2.0 + 0.5
-        
-        for position in viewModel.infiniteBassPattern {
-            // Calculate visual position for virtual strings
-            let virtualStringOffset = CGFloat(position.string - Int(physicalStringCenter))
-            let x = CGFloat(position.fret) * fretWidth + fretWidth / 2 + labelOffset
-            let y = size.height / 2.0 + virtualStringOffset * stringSpacing
-            
-            // Use bright colors visible in dark mode
-            let isPhysicalString = position.string >= 1 && position.string <= Constants.numberOfStrings
-            let brightBlue = Color(red: 0.3, green: 0.7, blue: 1.0)
-            let brightGreen = Color(red: 0.3, green: 0.9, blue: 0.4)
-            let color: Color = position.isRoot ? 
-                (isPhysicalString ? brightBlue.opacity(0.75) : brightBlue.opacity(0.5)) :
-                (isPhysicalString ? brightGreen.opacity(0.6) : brightGreen.opacity(0.4))
-            let radius: CGFloat = isPhysicalString ? 6 : 5
-            
-            context.fill(
-                Path(ellipseIn: CGRect(
-                    x: x - radius,
-                    y: y - radius,
-                    width: radius * 2,
-                    height: radius * 2
-                )),
-                with: .color(color)
-            )
-        }
     }
     
     private func drawCAGEDShapes(context: GraphicsContext, size: CGSize, layout: FretboardLayout) {
@@ -640,16 +606,49 @@ struct FretboardView: View {
         }
     }
     
-    private func handleTap(at location: CGPoint, fretWidth: CGFloat, stringSpacing: CGFloat) {
-        let layout = FretboardLayout(
+    private func currentLayout(for size: CGSize) -> FretboardLayout {
+        if viewModel.showInfiniteBassPattern {
+            var layout = FretboardLayout.infiniteBass(
+                canvasWidth: size.width,
+                maxFret: viewModel.maxFret,
+                stringSpacing: stringSpacing,
+                extendedStringCount: viewModel.extendedStringCount
+            )
+            layout.size = size
+            layout.originY = size.height / 2 - CGFloat(Constants.numberOfStrings) / 2 * layout.stringSpacing
+            layout.fretWidth = max(1, size.width - layout.labelOffset) / CGFloat(viewModel.maxFret + 1)
+            return layout
+        }
+        return FretboardLayout(
             maxFret: viewModel.maxFret,
-            fretWidth: fretWidth,
-            stringSpacing: stringSpacing,
-            labelOffset: 24
+            fretWidth: max(1, size.width - 24) / CGFloat(viewModel.maxFret + 1),
+            stringSpacing: size.height / CGFloat(Constants.numberOfStrings),
+            labelOffset: 24,
+            stringCount: Constants.numberOfStrings,
+            size: size
         )
+    }
+    
+    private func handleTap(at location: CGPoint, fretWidth: CGFloat, stringSpacing: CGFloat) {
+        // Prefer a layout that includes originY when infinite bass is active.
+        let layout: FretboardLayout
+        if viewModel.showInfiniteBassPattern {
+            layout = currentLayout(for: CGSize(
+                width: CGFloat(viewModel.maxFret + 1) * fretWidth + 24,
+                height: canvasMinHeight
+            ))
+        } else {
+            layout = FretboardLayout(
+                maxFret: viewModel.maxFret,
+                fretWidth: fretWidth,
+                stringSpacing: stringSpacing,
+                labelOffset: 24
+            )
+        }
         
         // Prefer inspecting a block when the tap lands on a block note.
-        if viewModel.showBlocks, let block = blockAt(location: location, layout: layout) {
+        if viewModel.showBlocks && !viewModel.showInfiniteBassPattern,
+           let block = blockAt(location: location, layout: layout) {
             viewModel.inspectBlock(block)
             return
         }

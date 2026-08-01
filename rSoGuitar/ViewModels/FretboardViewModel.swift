@@ -30,7 +30,7 @@ class FretboardViewModel: ObservableObject {
     @Published var infiniteBassPattern: [FretboardPosition] = []
     @Published var patternOffsetFret: Int = 0  // Fret offset for shifting the pattern
     @Published var patternOffsetString: Int = 0  // String offset for shifting the pattern
-    @Published var extendedStringCount: Int = 12  // Show 6 strings above and below (total 18 strings visible)
+    @Published var extendedStringCount: Int = 36  // 18 virtual strings above and below the neck
     @Published var showCAGED: Bool = false
     @Published var cagedShapes: [CAGEDShape] = []
     @Published var selectedCAGEDForms: Set<CAGEDForm> = []

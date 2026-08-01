@@ -17,6 +17,9 @@ struct FretboardLayout: Equatable {
     var labelOffset: CGFloat
     var stringCount: Int
     var size: CGSize
+    /// Top of the string band (y where string index 0 would start). Non-zero when
+    /// the physical neck is vertically centered inside a taller infinite-bass canvas.
+    var originY: CGFloat
     
     init(
         maxFret: Int,
@@ -24,7 +27,8 @@ struct FretboardLayout: Equatable {
         stringSpacing: CGFloat,
         labelOffset: CGFloat = 24,
         stringCount: Int = Constants.numberOfStrings,
-        size: CGSize = .zero
+        size: CGSize = .zero,
+        originY: CGFloat = 0
     ) {
         self.maxFret = maxFret
         self.fretWidth = fretWidth
@@ -32,6 +36,7 @@ struct FretboardLayout: Equatable {
         self.labelOffset = labelOffset
         self.stringCount = stringCount
         self.size = size
+        self.originY = originY
     }
     
     /// Convenience: derive cell sizes from a canvas size.
@@ -54,6 +59,36 @@ struct FretboardLayout: Equatable {
         )
     }
     
+    /// Layout for the infinite-bass wallpaper: physical neck centered, virtual strings above/below.
+    static func infiniteBass(
+        canvasWidth: CGFloat,
+        maxFret: Int,
+        stringSpacing: CGFloat,
+        extendedStringCount: Int,
+        labelOffset: CGFloat = 24
+    ) -> FretboardLayout {
+        let totalVirtual = Constants.numberOfStrings + extendedStringCount
+        let height = CGFloat(totalVirtual) * stringSpacing
+        let usableWidth = max(1, canvasWidth - labelOffset)
+        let fretWidth = usableWidth / CGFloat(maxFret + 1)
+        // Center the 6-string neck inside the taller canvas.
+        let originY = height / 2 - CGFloat(Constants.numberOfStrings) / 2 * stringSpacing
+        return FretboardLayout(
+            maxFret: maxFret,
+            fretWidth: fretWidth,
+            stringSpacing: stringSpacing,
+            labelOffset: labelOffset,
+            stringCount: Constants.numberOfStrings,
+            size: CGSize(width: canvasWidth, height: height),
+            originY: originY
+        )
+    }
+    
+    /// Total virtual strings produced by `BlockGenerator.infiniteBassPattern`.
+    static func infiniteBassVirtualCount(extendedStringCount: Int) -> Int {
+        Constants.numberOfStrings + extendedStringCount
+    }
+    
     /// X center of a fret column.
     func fretCenterX(_ fret: Int) -> CGFloat {
         CGFloat(fret) * fretWidth + fretWidth / 2 + labelOffset
@@ -64,9 +99,18 @@ struct FretboardLayout: Equatable {
         CGFloat(fret) * fretWidth + labelOffset
     }
     
-    /// Y of a string. String 1 (high E) is at the top.
+    /// Y of a string. String 1 (high E) is at the top. Works for virtual string indices too.
     func stringY(_ string: Int) -> CGFloat {
-        (CGFloat(string - 1) + 0.5) * stringSpacing
+        originY + (CGFloat(string - 1) + 0.5) * stringSpacing
+    }
+    
+    /// Vertical band covering the physical 6-string neck.
+    var neckRect: CGRect {
+        let top = stringY(1) - stringSpacing / 2
+        let bottom = stringY(Constants.numberOfStrings) + stringSpacing / 2
+        let left = labelOffset
+        let right = labelOffset + CGFloat(maxFret + 1) * fretWidth
+        return CGRect(x: left, y: top, width: max(0, right - left), height: max(0, bottom - top))
     }
     
     func point(string: Int, fret: Int, offset: CGSize = .zero) -> CGPoint {
@@ -85,7 +129,7 @@ struct FretboardLayout: Equatable {
         let adjustedX = location.x - labelOffset
         guard adjustedX >= 0 else { return nil }
         let fret = Int(adjustedX / fretWidth)
-        let string = Int(location.y / stringSpacing) + 1
+        let string = Int((location.y - originY) / stringSpacing) + 1
         guard fret >= 0 && fret <= maxFret,
               string >= 1 && string <= stringCount else {
             return nil
@@ -163,206 +207,199 @@ enum FretboardRenderer {
     
     // MARK: Blocks
     
-    /// Draw HEAD / BRIDGE / TRIPLE overlays with region fills, note markers,
-    /// spacing ticks (XX-X / X-XX), fret-span brackets, and labels.
+    /// Draw HEAD / BRIDGE / TRIPLE as outlined regions (rSoG spiral-map style),
+    /// not filled note squares. Labels are placed outside outlines with collision avoidance.
     static func drawBlocks(
         context: inout GraphicsContext,
         layout: FretboardLayout,
         blocks: [Block],
         selectedTypes: Set<BlockType>,
         offsets: [UUID: CGSize] = [:],
+        showOutlines: Bool = true,
+        showNotePips: Bool = true,
+        showLabels: Bool = true,
+        /// When true, only primary teaching placements are outlined (e–B HEAD, D–A BRIDGE, strings 3–5 TRIPLE).
+        /// Default false so every valid landmark on the board is outlined.
+        preferPrimaryPlacements: Bool = false,
+        /// Legacy flags kept for call-site compatibility; ignored in outline mode.
         showRegions: Bool = true,
-        showSpacingMarkers: Bool = true,
-        showBrackets: Bool = true
+        showSpacingMarkers: Bool = false,
+        showBrackets: Bool = false
     ) {
-        for block in blocks {
-            guard selectedTypes.contains(block.type) else { continue }
-            guard !block.positions.isEmpty else { continue }
-            
+        _ = showRegions
+        _ = showSpacingMarkers
+        _ = showBrackets
+        
+        // Stable draw order: HEAD under BRIDGE under TRIPLE so nested outlines stay readable.
+        let typeOrder: [BlockType: Int] = [.headBlock: 0, .bridgeBlock: 1, .tripleBlock: 2]
+        let visibleBlocks = blocks
+            .filter { selectedTypes.contains($0.type) && !$0.positions.isEmpty }
+            .filter { preferPrimaryPlacements ? isPrimaryPlacement($0) : true }
+            .sorted {
+                let lhs = typeOrder[$0.type, default: 9]
+                let rhs = typeOrder[$1.type, default: 9]
+                if lhs != rhs { return lhs < rhs }
+                if $0.anchorFret != $1.anchorFret { return $0.anchorFret < $1.anchorFret }
+                return $0.stringRange.lowerBound < $1.stringRange.lowerBound
+            }
+        
+        var occupiedLabelRects: [CGRect] = []
+        
+        for block in visibleBlocks {
             let offset = offsets[block.id] ?? .zero
             let color = RSOGPalette.blockColor(block.type)
             let visiblePositions = block.positions.filter { $0.fret <= layout.maxFret }
             guard !visiblePositions.isEmpty else { continue }
             
-            if showRegions {
-                drawBlockRegion(
+            let outlineRect = blockOutlineRect(
+                layout: layout,
+                positions: visiblePositions,
+                offset: offset
+            )
+            
+            if showOutlines {
+                drawBlockOutline(
                     context: &context,
-                    layout: layout,
-                    block: block,
+                    rect: outlineRect,
                     color: color,
-                    offset: offset
+                    lineWidth: block.type == .tripleBlock ? 2.0 : 2.0,
+                    fillOpacity: block.type == .tripleBlock ? 0.04 : 0.07
                 )
             }
             
-            if showBrackets {
-                drawBlockBracket(
-                    context: &context,
-                    layout: layout,
-                    block: block,
-                    color: color,
-                    offset: offset
-                )
-            }
-            
-            // Note markers
-            let markerSize: CGFloat = block.type == .tripleBlock ? 14 : 16
-            for position in visiblePositions {
-                let p = layout.point(for: position, offset: offset)
-                let rect = CGRect(
-                    x: p.x - markerSize / 2,
-                    y: p.y - markerSize / 2,
-                    width: markerSize,
-                    height: markerSize
-                )
-                if block.type == .tripleBlock {
-                    // Circles emphasize triad dots within the TRIPLE.
-                    fillCircle(context: &context, center: p, radius: markerSize / 2, color: color.opacity(0.65))
-                    strokeCircle(context: &context, center: p, radius: markerSize / 2, color: color, lineWidth: 2)
-                } else {
-                    var square = Path()
-                    square.addRect(rect)
-                    context.fill(square, with: .color(color.opacity(0.65)))
-                    context.stroke(square, with: .color(color), lineWidth: 2)
+            if showNotePips {
+                for position in visiblePositions {
+                    let p = layout.point(for: position, offset: offset)
+                    strokeCircle(context: &context, center: p, radius: 3.5, color: color.opacity(0.9), lineWidth: 1.5)
                 }
             }
             
-            if showSpacingMarkers {
-                drawSpacingMarkers(
+            if showLabels {
+                drawBlockOutlineLabel(
                     context: &context,
                     layout: layout,
                     block: block,
+                    outlineRect: outlineRect,
                     color: color,
-                    offset: offset
+                    occupiedRects: &occupiedLabelRects
                 )
             }
-            
-            drawBlockLabel(
-                context: &context,
-                layout: layout,
-                block: block,
-                color: color,
-                offset: offset
+        }
+    }
+    
+    /// Tight padded bounds around the block's visible note positions.
+    private static func blockOutlineRect(
+        layout: FretboardLayout,
+        positions: [FretboardPosition],
+        offset: CGSize,
+        padding: CGFloat = 10
+    ) -> CGRect {
+        let points = positions.map { layout.point(for: $0, offset: offset) }
+        guard let minX = points.map(\.x).min(),
+              let maxX = points.map(\.x).max(),
+              let minY = points.map(\.y).min(),
+              let maxY = points.map(\.y).max() else {
+            return .zero
+        }
+        // Expand toward fret/string cell edges so the outline reads as a zone.
+        let padX = max(padding, layout.fretWidth * 0.35)
+        let padY = max(padding, layout.stringSpacing * 0.4)
+        return CGRect(
+            x: minX - padX,
+            y: minY - padY,
+            width: (maxX - minX) + padX * 2,
+            height: (maxY - minY) + padY * 2
+        )
+    }
+    
+    private static func drawBlockOutline(
+        context: inout GraphicsContext,
+        rect: CGRect,
+        color: Color,
+        lineWidth: CGFloat,
+        fillOpacity: Double = 0.07
+    ) {
+        var path = Path()
+        path.addRoundedRect(in: rect, cornerSize: CGSize(width: 8, height: 8))
+        // Very light wash so overlapping zones (BRIDGE ∩ TRIPLE) stay transparent.
+        context.fill(path, with: .color(color.opacity(fillOpacity)))
+        context.stroke(path, with: .color(color.opacity(0.95)), lineWidth: lineWidth)
+    }
+    
+    private static func drawBlockOutlineLabel(
+        context: inout GraphicsContext,
+        layout: FretboardLayout,
+        block: Block,
+        outlineRect: CGRect,
+        color: Color,
+        occupiedRects: inout [CGRect]
+    ) {
+        let title = shortBlockLabel(for: block)
+        let fontSize: CGFloat = block.type == .tripleBlock ? 10 : 11
+        let labelWidth = CGFloat(max(36, title.count * 7 + 10))
+        let labelHeight: CGFloat = 16
+        let midX = outlineRect.midX
+        
+        // Prefer above the outline; fall back to below / inside-top if crowded.
+        let candidates: [CGPoint] = [
+            CGPoint(x: midX, y: outlineRect.minY - labelHeight * 0.65),
+            CGPoint(x: midX, y: outlineRect.maxY + labelHeight * 0.65),
+            CGPoint(x: midX, y: outlineRect.minY + labelHeight * 0.85),
+            CGPoint(x: outlineRect.minX + labelWidth * 0.55, y: outlineRect.minY - labelHeight * 0.65),
+            CGPoint(x: outlineRect.maxX - labelWidth * 0.55, y: outlineRect.minY - labelHeight * 0.65)
+        ]
+        
+        for center in candidates {
+            let rect = CGRect(
+                x: center.x - labelWidth / 2,
+                y: center.y - labelHeight / 2,
+                width: labelWidth,
+                height: labelHeight
             )
+            // Keep labels on-canvas and non-overlapping.
+            guard rect.minY >= -2,
+                  rect.maxY <= layout.size.height + 2 || layout.size.height == 0,
+                  !occupiedRects.contains(where: { $0.insetBy(dx: -3, dy: -2).intersects(rect) })
+            else { continue }
+            
+            var bg = Path()
+            bg.addRoundedRect(in: rect, cornerSize: CGSize(width: 4, height: 4))
+            // Outline-style chip: mostly transparent fill, strong border.
+            context.fill(bg, with: .color(color.opacity(0.18)))
+            context.stroke(bg, with: .color(color), lineWidth: 1.25)
+            
+            let text = Text(title)
+                .font(.system(size: fontSize, weight: .bold))
+                .foregroundColor(color)
+            context.draw(text, at: center)
+            occupiedRects.append(rect)
+            return
+        }
+        // If every slot is taken, skip the label — the outline still identifies the block.
+    }
+    
+    private static func shortBlockLabel(for block: Block) -> String {
+        switch block.type {
+        case .headBlock: return "HEAD"
+        case .bridgeBlock: return "BRIDGE"
+        case .tripleBlock: return "TRIPLE"
         }
     }
     
-    private static func drawBlockRegion(
-        context: inout GraphicsContext,
-        layout: FretboardLayout,
-        block: Block,
-        color: Color,
-        offset: CGSize
-    ) {
-        let rect = layout.regionRect(
-            stringRange: block.stringRange,
-            fretRange: block.fretRange,
-            offset: offset,
-            padding: 6
-        )
-        var path = Path()
-        path.addRoundedRect(in: rect, cornerSize: CGSize(width: 6, height: 6))
-        context.fill(path, with: .color(color.opacity(0.12)))
-        context.stroke(path, with: .color(color.opacity(0.35)), lineWidth: 1)
-    }
-    
-    private static func drawBlockBracket(
-        context: inout GraphicsContext,
-        layout: FretboardLayout,
-        block: Block,
-        color: Color,
-        offset: CGSize
-    ) {
-        let left = layout.fretLineX(block.fretRange.lowerBound) + offset.width
-        let right = layout.fretLineX(block.fretRange.upperBound) + layout.fretWidth + offset.width
-        let topY = layout.stringY(block.stringRange.lowerBound) - layout.stringSpacing * 0.45 + offset.height
-        let tick: CGFloat = 6
-        
-        var path = Path()
-        path.move(to: CGPoint(x: left, y: topY + tick))
-        path.addLine(to: CGPoint(x: left, y: topY))
-        path.addLine(to: CGPoint(x: right, y: topY))
-        path.addLine(to: CGPoint(x: right, y: topY + tick))
-        context.stroke(path, with: .color(color.opacity(0.8)), lineWidth: 1.5)
-    }
-    
-    /// Draw XX-X / X-XX spacing ticks under each string's notes in the block.
-    private static func drawSpacingMarkers(
-        context: inout GraphicsContext,
-        layout: FretboardLayout,
-        block: Block,
-        color: Color,
-        offset: CGSize
-    ) {
-        let grouped = Dictionary(grouping: block.positions.filter { $0.fret <= layout.maxFret }) { $0.string }
-        
-        for (string, positions) in grouped {
-            let frets = positions.map(\.fret).sorted()
-            guard frets.count >= 2 else { continue }
-            
-            let y = layout.stringY(string) + 11 + offset.height
-            
-            // Connect consecutive notes on the string with a light rail.
-            for i in 0..<(frets.count - 1) {
-                let from = CGPoint(x: layout.fretCenterX(frets[i]) + offset.width, y: y)
-                let to = CGPoint(x: layout.fretCenterX(frets[i + 1]) + offset.width, y: y)
-                let gap = frets[i + 1] - frets[i]
-                var path = Path()
-                path.move(to: from)
-                path.addLine(to: to)
-                // Adjacent frets (XX) get a solid rail; gaps (X-X) get a dashed feel via thinner/fainter line.
-                let opacity = gap <= 1 ? 0.9 : 0.35
-                let width: CGFloat = gap <= 1 ? 2.5 : 1
-                context.stroke(path, with: .color(color.opacity(opacity)), lineWidth: width)
-            }
-            
-            // Tick marks at each note
-            for fret in frets {
-                let x = layout.fretCenterX(fret) + offset.width
-                var tick = Path()
-                tick.move(to: CGPoint(x: x, y: y - 3))
-                tick.addLine(to: CGPoint(x: x, y: y + 3))
-                context.stroke(tick, with: .color(color), lineWidth: 2)
+    /// Primary rSoG landmark placements used on the lesson diagrams.
+    private static func isPrimaryPlacement(_ block: Block) -> Bool {
+        switch block.type {
+        case .headBlock:
+            return block.stringRange == 1...2
+        case .bridgeBlock:
+            return block.stringRange == 4...5
+        case .tripleBlock:
+            // Full on-board sets, plus edge overflows that show 6 of 9 notes (1–2 or 5–6).
+            switch block.stringRange {
+            case 1...2, 3...5, 4...6, 5...6: return true
+            default: return false
             }
         }
-    }
-    
-    private static func drawBlockLabel(
-        context: inout GraphicsContext,
-        layout: FretboardLayout,
-        block: Block,
-        color: Color,
-        offset: CGSize
-    ) {
-        // Prefer anchor fret on the topmost string of the block.
-        let labelPos = block.positions
-            .filter { $0.fret <= layout.maxFret }
-            .sorted { lhs, rhs in
-                if lhs.string != rhs.string { return lhs.string < rhs.string }
-                return lhs.fret < rhs.fret
-            }
-            .first
-        
-        guard let labelPos else { return }
-        let p = layout.point(for: labelPos, offset: offset)
-        let labelY = p.y - 20
-        let labelWidth = CGFloat(max(52, block.name.count * 7))
-        let labelHeight: CGFloat = 18
-        let rect = CGRect(
-            x: p.x - labelWidth / 2,
-            y: labelY - labelHeight / 2,
-            width: labelWidth,
-            height: labelHeight
-        )
-        
-        var bg = Path()
-        bg.addRoundedRect(in: rect, cornerSize: CGSize(width: 4, height: 4))
-        context.fill(bg, with: .color(color.opacity(0.92)))
-        context.stroke(bg, with: .color(color), lineWidth: 1)
-        
-        let text = Text(block.name)
-            .font(.system(size: 11, weight: .bold))
-            .foregroundColor(.white)
-        context.draw(text, at: CGPoint(x: p.x, y: labelY))
     }
     
     // MARK: Patterns
@@ -543,5 +580,213 @@ enum FretboardRenderer {
             }
         }
         return keys
+    }
+    
+    // MARK: Infinite bass scene
+    
+    /// White wallpaper + wood neck + metallic frets/strings + charcoal spheres.
+    static func drawInfiniteBassScene(
+        context: inout GraphicsContext,
+        layout: FretboardLayout,
+        positions: [FretboardPosition]
+    ) {
+        drawInfiniteBassBackground(context: &context, layout: layout)
+        drawGuitarBody(context: &context, layout: layout)
+        drawHeadstock(context: &context, layout: layout)
+        drawWoodNeck(context: &context, layout: layout)
+        drawMetallicFrets(context: &context, layout: layout)
+        drawPhysicalStrings(context: &context, layout: layout)
+        drawInfiniteBassSpheres(context: &context, layout: layout, positions: positions)
+    }
+    
+    static func drawInfiniteBassBackground(
+        context: inout GraphicsContext,
+        layout: FretboardLayout
+    ) {
+        let rect = CGRect(origin: .zero, size: layout.size)
+        context.fill(Path(rect), with: .color(RSOGPalette.infiniteBassBackground))
+    }
+    
+    static func drawWoodNeck(
+        context: inout GraphicsContext,
+        layout: FretboardLayout
+    ) {
+        let neck = layout.neckRect
+        var path = Path()
+        path.addRoundedRect(in: neck, cornerSize: CGSize(width: 2, height: 2))
+        context.fill(
+            path,
+            with: .linearGradient(
+                Gradient(colors: [
+                    RSOGPalette.fretboardWoodLight,
+                    RSOGPalette.fretboardWoodMid,
+                    RSOGPalette.fretboardWoodDark
+                ]),
+                startPoint: CGPoint(x: neck.midX, y: neck.minY),
+                endPoint: CGPoint(x: neck.midX, y: neck.maxY)
+            )
+        )
+        // Subtle edge shade
+        context.stroke(path, with: .color(.black.opacity(0.18)), lineWidth: 1)
+    }
+    
+    static func drawMetallicFrets(
+        context: inout GraphicsContext,
+        layout: FretboardLayout
+    ) {
+        let neck = layout.neckRect
+        for fret in 0...layout.maxFret {
+            let x = layout.fretLineX(fret)
+            let isNut = fret == 0
+            let width: CGFloat = isNut ? 3.5 : 2.0
+            
+            // Shadow edge
+            var shadow = Path()
+            shadow.move(to: CGPoint(x: x + 0.6, y: neck.minY))
+            shadow.addLine(to: CGPoint(x: x + 0.6, y: neck.maxY))
+            context.stroke(shadow, with: .color(.black.opacity(0.2)), lineWidth: width)
+            
+            // Main silver wire
+            var wire = Path()
+            wire.move(to: CGPoint(x: x, y: neck.minY))
+            wire.addLine(to: CGPoint(x: x, y: neck.maxY))
+            context.stroke(wire, with: .color(RSOGPalette.fretWire), lineWidth: width)
+            
+            // Highlight line for a double-wire look
+            if !isNut {
+                var highlight = Path()
+                highlight.move(to: CGPoint(x: x - 0.7, y: neck.minY))
+                highlight.addLine(to: CGPoint(x: x - 0.7, y: neck.maxY))
+                context.stroke(highlight, with: .color(RSOGPalette.fretWireHighlight.opacity(0.85)), lineWidth: 0.8)
+            }
+        }
+    }
+    
+    static func drawPhysicalStrings(
+        context: inout GraphicsContext,
+        layout: FretboardLayout
+    ) {
+        let neck = layout.neckRect
+        for string in 1...Constants.numberOfStrings {
+            let y = layout.stringY(string)
+            // High E is thinner; low E is thicker.
+            let lineWidth: CGFloat = 0.7 + CGFloat(string - 1) * 0.22
+            var path = Path()
+            path.move(to: CGPoint(x: neck.minX, y: y))
+            path.addLine(to: CGPoint(x: neck.maxX, y: y))
+            context.stroke(path, with: .color(RSOGPalette.stringMetal.opacity(0.85)), lineWidth: lineWidth)
+        }
+    }
+    
+    static func drawHeadstock(
+        context: inout GraphicsContext,
+        layout: FretboardLayout
+    ) {
+        let neck = layout.neckRect
+        let width: CGFloat = max(18, layout.labelOffset - 4)
+        let rect = CGRect(
+            x: neck.minX - width,
+            y: neck.minY - 4,
+            width: width,
+            height: neck.height + 8
+        )
+        var path = Path()
+        path.addRoundedRect(in: rect, cornerSize: CGSize(width: 4, height: 4))
+        context.fill(path, with: .color(RSOGPalette.headstock))
+        
+        // Tuning pegs
+        let pegRadius: CGFloat = 2.2
+        for string in 1...Constants.numberOfStrings {
+            let y = layout.stringY(string)
+            let pegCenter = CGPoint(x: rect.minX + width * 0.45, y: y)
+            fillCircle(
+                context: &context,
+                center: pegCenter,
+                radius: pegRadius,
+                color: Color(white: 0.75)
+            )
+        }
+    }
+    
+    static func drawGuitarBody(
+        context: inout GraphicsContext,
+        layout: FretboardLayout
+    ) {
+        let neck = layout.neckRect
+        let bodyWidth = neck.height * 1.15
+        let bodyHeight = neck.height * 1.65
+        let rect = CGRect(
+            x: neck.maxX - 10,
+            y: neck.midY - bodyHeight / 2,
+            width: bodyWidth,
+            height: bodyHeight
+        )
+        context.fill(Path(ellipseIn: rect), with: .color(RSOGPalette.guitarBody))
+        // Sound hole hint
+        let holeCenter = CGPoint(x: rect.midX + bodyWidth * 0.08, y: rect.midY)
+        strokeCircle(
+            context: &context,
+            center: holeCenter,
+            radius: min(bodyWidth, bodyHeight) * 0.12,
+            color: Color.black.opacity(0.35),
+            lineWidth: 3
+        )
+    }
+    
+    static func drawInfiniteBassSpheres(
+        context: inout GraphicsContext,
+        layout: FretboardLayout,
+        positions: [FretboardPosition]
+    ) {
+        let radius = max(5.5, min(layout.stringSpacing * 0.38, layout.fretWidth * 0.28))
+        for position in positions where position.fret <= layout.maxFret {
+            let center = layout.point(for: position)
+            drawCharcoalSphere(context: &context, center: center, radius: radius)
+        }
+    }
+    
+    /// Glossy charcoal sphere matching the rSoG infinite-bass reference art.
+    static func drawCharcoalSphere(
+        context: inout GraphicsContext,
+        center: CGPoint,
+        radius: CGFloat
+    ) {
+        // Soft contact shadow
+        let shadowRect = CGRect(
+            x: center.x - radius + 0.6,
+            y: center.y - radius + 1.2,
+            width: radius * 2,
+            height: radius * 2
+        )
+        context.fill(Path(ellipseIn: shadowRect), with: .color(.black.opacity(0.18)))
+        
+        let sphereRect = CGRect(
+            x: center.x - radius,
+            y: center.y - radius,
+            width: radius * 2,
+            height: radius * 2
+        )
+        context.fill(
+            Path(ellipseIn: sphereRect),
+            with: .radialGradient(
+                Gradient(colors: [
+                    Color(white: 0.55),
+                    RSOGPalette.infiniteBassSphere,
+                    Color(white: 0.08)
+                ]),
+                center: CGPoint(x: center.x - radius * 0.32, y: center.y - radius * 0.38),
+                startRadius: 0,
+                endRadius: radius * 1.25
+            )
+        )
+        
+        // Specular highlight
+        let highlight = CGRect(
+            x: center.x - radius * 0.5,
+            y: center.y - radius * 0.55,
+            width: radius * 0.5,
+            height: radius * 0.35
+        )
+        context.fill(Path(ellipseIn: highlight), with: .color(.white.opacity(0.32)))
     }
 }

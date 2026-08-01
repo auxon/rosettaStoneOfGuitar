@@ -55,4 +55,17 @@ enum RSOGPalette {
     static let diatonicRoot = Color(red: 0.3, green: 0.9, blue: 0.4)
     static let diatonicNote = Color(red: 0.3, green: 0.9, blue: 0.4)
     static let selectedNote = Color(red: 1.0, green: 0.3, blue: 0.3)
+    
+    // MARK: Infinite bass / reference fretboard look
+    
+    static let infiniteBassBackground = Color.white
+    static let fretboardWoodLight = Color(red: 0.92, green: 0.80, blue: 0.55)
+    static let fretboardWoodMid = Color(red: 0.82, green: 0.66, blue: 0.42)
+    static let fretboardWoodDark = Color(red: 0.70, green: 0.52, blue: 0.30)
+    static let fretWire = Color(red: 0.78, green: 0.80, blue: 0.84)
+    static let fretWireHighlight = Color(red: 0.95, green: 0.96, blue: 0.98)
+    static let stringMetal = Color(red: 0.35, green: 0.35, blue: 0.38)
+    static let infiniteBassSphere = Color(red: 0.22, green: 0.22, blue: 0.24)
+    static let headstock = Color(red: 0.55, green: 0.55, blue: 0.58)
+    static let guitarBody = Color(red: 0.88, green: 0.74, blue: 0.48)
 }

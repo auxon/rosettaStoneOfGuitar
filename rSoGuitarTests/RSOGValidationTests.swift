@@ -49,19 +49,20 @@ struct RSOGValidationTests {
         }
     }
     
-    @Test func tripleBlocksContainThreeVoicingsAcrossKeys() {
-        for key in [.C, .G, .F, .D] as [Key] {
+    @Test func tripleBlocksAreNineNoteXXXAcrossKeys() {
+        for key in [.C, .G, .F, .D, .E, .A] as [Key] {
             guard let triple = RSOGTemplate.primaryTriple(for: key, maxFret: 15) else {
                 Issue.record("No primary TRIPLE for \(key.rawValue)")
                 continue
             }
-            #expect(triple.voicings.count == 3, "TRIPLE voicing count in \(key.rawValue)")
-            #expect(triple.positions.count >= 5)
+            #expect(triple.positions.count == 9, "TRIPLE must be exactly 9 notes in \(key.rawValue)")
             #expect(RSOGTestSupport.assertAllDiatonic(triple.positions, key: key))
             
-            for voicing in triple.voicings {
-                #expect(Set(voicing.positions.map(\.string)).count == 3)
-                #expect(RSOGTestSupport.fretSpan(of: voicing.positions) <= 5)
+            let strings = Set(triple.positions.map(\.string))
+            #expect(strings.count == 3)
+            for string in strings {
+                let frets = triple.positions.filter { $0.string == string }.map(\.fret).sorted()
+                #expect(RSOGTemplate.matchesSpacing(frets, pattern: RSOGSpacingPattern.tripleOffsets))
             }
         }
     }

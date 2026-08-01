@@ -99,4 +99,39 @@ struct FretboardRendererTests {
         #expect(layout.hitTest(at: CGPoint(x: 1000, y: 15)) == nil)
         #expect(layout.hitTest(at: CGPoint(x: 40, y: -5)) == nil)
     }
+    
+    @Test func infiniteBassCentersPhysicalNeck() {
+        let layout = FretboardLayout.infiniteBass(
+            canvasWidth: 640,
+            maxFret: 12,
+            stringSpacing: 30,
+            extendedStringCount: 36
+        )
+        
+        #expect(layout.size.height == CGFloat(6 + 36) * 30)
+        #expect(layout.stringY(1) < layout.stringY(6))
+        
+        // Physical neck should be vertically centered.
+        let expectedMid = layout.size.height / 2
+        let neckMid = (layout.stringY(1) + layout.stringY(6)) / 2
+        #expect(abs(neckMid - expectedMid) < 0.001)
+        
+        // Virtual strings above/below stay on the same grid.
+        #expect(layout.stringY(0) == layout.stringY(1) - 30)
+        #expect(layout.stringY(7) == layout.stringY(6) + 30)
+    }
+    
+    @Test func infiniteBassHitTestUsesOriginY() {
+        let layout = FretboardLayout.infiniteBass(
+            canvasWidth: 640,
+            maxFret: 12,
+            stringSpacing: 30,
+            extendedStringCount: 36,
+            labelOffset: 0
+        )
+        let point = layout.point(string: 3, fret: 5)
+        let hit = layout.hitTest(at: point)
+        #expect(hit?.string == 3)
+        #expect(hit?.fret == 5)
+    }
 }

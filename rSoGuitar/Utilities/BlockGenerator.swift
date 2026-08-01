@@ -4,7 +4,7 @@
 //
 //  Generates block overlays for the fretboard based on rSoGuitar methodology.
 //  The entire fretboard is one repeating diatonic pattern containing
-//  HEAD (XX-X), BRIDGE (X-XX), and TRIPLE (stacked 1-3-5 triads) blocks
+//  HEAD (XX-X), BRIDGE (X-XX), and TRIPLE (X-X-X) blocks
 //  that tile in sequence: HEAD → BRIDGE → TRIPLE → HEAD → …
 //
 
@@ -136,24 +136,27 @@ struct BlockGenerator {
         }
     }
     
-    // MARK: - TRIPLE Blocks (X-X-X / three triads)
+    // MARK: - TRIPLE Blocks (X-X-X — every other half-step)
     
     private static func buildTripleBlocks(for key: Key, maxFret: Int) -> [Block] {
         let placements = RSOGTemplate.allTriplePlacements(for: key, maxFret: maxFret)
         
+        let primary = RSOGStringTriples.primaryTriple
         let sorted = placements.sorted { lhs, rhs in
-            if lhs.startFret != rhs.startFret { return lhs.startFret < rhs.startFret }
+            let leftPrimary = lhs.startString == primary.0
+            let rightPrimary = rhs.startString == primary.0
+            if leftPrimary != rightPrimary { return leftPrimary && !rightPrimary }
+            if lhs.anchor != rhs.anchor { return lhs.anchor < rhs.anchor }
             return lhs.startString < rhs.startString
         }
         
         return sorted.map { placement in
-            let numerals = placement.voicings.map(\.degree.romanNumeral).joined(separator: "–")
-            return makeBlock(
+            makeBlock(
                 type: .tripleBlock,
                 name: "TRIPLE",
-                description: "TRIPLE block: stacked 1-3-5 triads (\(numerals)) on strings \(placement.startString)–\(placement.startString + 2).",
+                description: "TRIPLE block: 9-note X-X-X pattern (every other half-step) on strings \(placement.startString)–\(placement.startString + 2).",
                 positions: placement.positions,
-                anchorFret: placement.startFret
+                anchorFret: placement.anchor
             )
         }
     }
@@ -228,37 +231,18 @@ struct BlockGenerator {
         key: Key,
         maxFret: Int
     ) -> Block? {
-        let startString = min(max(1, startPos.string), Constants.numberOfStrings - 2)
-        if let found = RSOGTemplate.tripleBlock(
-            atStartString: startString,
-            startFret: startPos.fret,
-            key: key,
-            maxFret: maxFret
-        ) {
-            let numerals = found.voicings.map(\.degree.romanNumeral).joined(separator: "–")
-            return makeBlock(
-                type: .tripleBlock,
-                name: "TRIPLE",
-                description: "TRIPLE block: stacked 1-3-5 triads (\(numerals)).",
-                positions: found.positions,
-                anchorFret: startPos.fret
-            )
-        }
-        
-        // Fallback: nearest triple placement.
         let placements = RSOGTemplate.allTriplePlacements(for: key, maxFret: maxFret)
         guard let nearest = placements.min(by: {
-            abs($0.startFret - startPos.fret) + abs($0.startString - startString)
-            < abs($1.startFret - startPos.fret) + abs($1.startString - startString)
+            abs($0.anchor - startPos.fret) + abs($0.startString - startPos.string)
+            < abs($1.anchor - startPos.fret) + abs($1.startString - startPos.string)
         }) else { return nil }
         
-        let numerals = nearest.voicings.map(\.degree.romanNumeral).joined(separator: "–")
         return makeBlock(
             type: .tripleBlock,
             name: "TRIPLE",
-            description: "TRIPLE block: stacked 1-3-5 triads (\(numerals)).",
+            description: "TRIPLE block: 9-note X-X-X pattern (every other half-step) on strings \(nearest.startString)–\(nearest.startString + 2).",
             positions: nearest.positions,
-            anchorFret: nearest.startFret
+            anchorFret: nearest.anchor
         )
     }
     
@@ -413,23 +397,22 @@ struct BlockGenerator {
         )
     }
     
-    /// Primary TRIPLE block for the key (three stacked diatonic triads).
-    static func tripleBlock(for key: Key, maxFret: Int = 12) -> Block {
+    /// Primary TRIPLE block for the key (9-note X-X-X).
+    static func tripleBlock(for key: Key, maxFret: Int = 15) -> Block {
         if let primary = RSOGTemplate.primaryTriple(for: key, maxFret: maxFret) {
-            let numerals = primary.voicings.map(\.degree.romanNumeral).joined(separator: "–")
             return makeBlock(
                 type: .tripleBlock,
                 name: "TRIPLE",
-                description: "TRIPLE block: stacked 1-3-5 triads (\(numerals)).",
+                description: "TRIPLE block: 9-note X-X-X pattern (every other half-step).",
                 positions: primary.positions,
-                anchorFret: primary.startFret
+                anchorFret: primary.anchor
             )
         }
         return Block(
             type: .tripleBlock,
             name: "TRIPLE",
             description: "TRIPLE block not found for this key.",
-            fretRange: 0...5,
+            fretRange: 0...4,
             stringRange: 3...5,
             positions: [],
             anchorFret: 0

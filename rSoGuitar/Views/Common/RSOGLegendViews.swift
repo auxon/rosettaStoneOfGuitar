@@ -10,33 +10,66 @@ import SwiftUI
 // MARK: - Block Legend
 
 struct RSOGBlockLegendView: View {
-    var selectedTypes: Set<BlockType> = Set(RSOGConceptInfo.allBlockTypes)
+    @Binding var selectedTypes: Set<BlockType>
     var compact: Bool = false
+    var allowsToggle: Bool = false
+    
+    /// Display-only legend (chips reflect `selectedTypes`; empty set = all shown as active).
+    init(selectedTypes: Set<BlockType> = Set(RSOGConceptInfo.allBlockTypes), compact: Bool = false) {
+        self._selectedTypes = .constant(selectedTypes)
+        self.compact = compact
+        self.allowsToggle = false
+    }
+    
+    /// Interactive legend — tap a chip to toggle that block type on/off.
+    init(selectedTypes: Binding<Set<BlockType>>, compact: Bool = false) {
+        self._selectedTypes = selectedTypes
+        self.compact = compact
+        self.allowsToggle = true
+    }
     
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: compact ? 8 : 12) {
                 ForEach(RSOGConceptInfo.allBlockTypes, id: \.self) { type in
-                    let active = selectedTypes.isEmpty || selectedTypes.contains(type)
-                    HStack(spacing: 6) {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(RSOGPalette.blockColor(type).opacity(active ? 1 : 0.35))
-                            .frame(width: compact ? 10 : 12, height: compact ? 10 : 12)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(RSOGConceptInfo.blockTitle(type))
-                                .font(compact ? .caption2.weight(.bold) : .caption.weight(.bold))
-                            if !compact {
-                                Text(RSOGConceptInfo.blockSubtitle(type))
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
+                    let active = allowsToggle
+                        ? selectedTypes.contains(type)
+                        : (selectedTypes.isEmpty || selectedTypes.contains(type))
+                    Button {
+                        guard allowsToggle else { return }
+                        if selectedTypes.contains(type) {
+                            selectedTypes.remove(type)
+                        } else {
+                            selectedTypes.insert(type)
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            RoundedRectangle(cornerRadius: 3)
+                                .strokeBorder(RSOGPalette.blockColor(type).opacity(active ? 1 : 0.35), lineWidth: 2)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(RSOGPalette.blockColor(type).opacity(active ? 0.12 : 0.05))
+                                )
+                                .frame(width: compact ? 12 : 14, height: compact ? 10 : 12)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(RSOGConceptInfo.blockTitle(type))
+                                    .font(compact ? .caption2.weight(.bold) : .caption.weight(.bold))
+                                if !compact {
+                                    Text(RSOGConceptInfo.blockSubtitle(type))
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
+                        .opacity(active ? 1 : 0.45)
+                        .padding(.horizontal, compact ? 6 : 8)
+                        .padding(.vertical, compact ? 4 : 6)
+                        .background(RSOGPalette.blockColor(type).opacity(active ? 0.14 : 0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
-                    .opacity(active ? 1 : 0.45)
-                    .padding(.horizontal, compact ? 6 : 8)
-                    .padding(.vertical, compact ? 4 : 6)
-                    .background(RSOGPalette.blockColor(type).opacity(active ? 0.14 : 0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .buttonStyle(.plain)
+                    .disabled(!allowsToggle)
+                    .accessibilityLabel("\(RSOGConceptInfo.blockTitle(type))\(active ? ", selected" : "")")
                 }
             }
             .padding(.horizontal)

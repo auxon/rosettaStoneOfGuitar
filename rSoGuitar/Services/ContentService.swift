@@ -77,7 +77,7 @@ class ContentService {
         let introContent: [LessonContent] = [
             .text("Welcome to the Rosetta Stone of Guitar (rSoGuitar). Traditional theory studies patterns on the staff — this method studies the patterns your eyes already look at: the fretboard."),
             .text(RSOGConceptInfo.methodBlurb),
-            .text("The entire neck is one repeating diatonic pattern. Within it, three milestones repeat: HEAD (XX-X), BRIDGE (X-XX), and TRIPLE (stacked 1–3–5 triads). Learn to read those landmarks and the whole pattern snaps into place."),
+            .text("The entire neck is one repeating diatonic pattern. Within it, three milestones repeat: HEAD (XX-X), BRIDGE (X-XX), and TRIPLE (X-X-X — every other half-step). Learn to read those landmarks and the whole pattern snaps into place."),
             .text("The four core concepts are Spiral Mapping, Jumping, Family of Chords, and Familial Hierarchy — the same sequence taught at rsoguitar.com/rsoguitar."),
             .text("Explore the demo below. HEAD, BRIDGE, and TRIPLE overlays are available — tap notes to hear them, and watch how the spiral path threads the pattern."),
             .fretboardDemo(introPattern)
@@ -146,12 +146,12 @@ class ContentService {
         let familyContent: [LessonContent] = [
             .text("Family of Chords reveals the relationship between chord positions across the fretboard in the horizontal direction."),
             .text("In a major key the primary family is I, IV, and V — shown here as real 1–3–5 triad voicings, not just root dots. Each color is a chord; lines connect tones inside a voicing."),
-            .text("The TRIPLE block is the chord-building landmark: three stacked diatonic triads that make available harmony visible anywhere you stand on the neck."),
+            .text("The TRIPLE block is the 9-note X-X-X landmark — every other half-step across three strings — that sits inside the same repeating diatonic pattern as HEAD and BRIDGE."),
             .fretboardDemo(familyPattern),
             .text("Once you can see the family horizontally, accompaniment stops being a scavenger hunt — you already know where the next chord lives relative to the one you are on."),
             .exercise(Exercise(
                 title: "Family of Chords Practice",
-                instructions: "Identify I (blue), IV (green), and V (orange). Enable the TRIPLE block and relate those voicings to the stacked-triad landmark.",
+                instructions: "Identify I (blue), IV (green), and V (orange). Enable the TRIPLE block and notice how those chords sit inside the X-X-X landmark.",
                 pattern: familyPattern
             ))
         ]

@@ -92,7 +92,7 @@ struct PatternGeneratorTests {
         
         for group in pattern.chordGroups {
             #expect(!group.positions.isEmpty, "Missing voicing for \(group.romanNumeral)")
-            #expect(group.positions.contains(where: \.isTriadRoot))
+            #expect(group.positions.contains { $0.isTriadRoot })
             
             // Hierarchy connections run along the stack.
             if !group.connections.isEmpty {

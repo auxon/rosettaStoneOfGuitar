@@ -4,30 +4,33 @@
 //
 //  Canonical Rosetta Stone of Guitar (rSoG) block templates.
 //  The fretboard is one repeating diatonic pattern subdivided into
-//  HEAD (XX-X), BRIDGE (X-XX), and TRIPLE (X-X-X / stacked triads).
+//  HEAD (XX-X), BRIDGE (X-XX), and TRIPLE (X-X-X — every other fret).
 //
 
 import Foundation
 
 // MARK: - Spacing Patterns
 
-/// Relative fret offsets that define HEAD / BRIDGE spacing on a string.
+/// Relative fret offsets that define HEAD / BRIDGE / TRIPLE spacing on a string.
 enum RSOGSpacingPattern {
     /// XX-X — two adjacent frets, gap, then one fret.
     static let headOffsets = [0, 1, 3]
     /// X-XX — one fret, gap, then two adjacent frets.
     static let bridgeOffsets = [0, 2, 3]
+    /// X-X-X — every other half-step (whole-step spacing): note, skip, note, skip, note.
+    static let tripleOffsets = [0, 2, 4]
     
     static func offsets(for type: BlockType) -> [Int]? {
         switch type {
         case .headBlock: return headOffsets
         case .bridgeBlock: return bridgeOffsets
-        case .tripleBlock: return nil
+        case .tripleBlock: return tripleOffsets
         }
     }
     
     static var headSpan: Int { headOffsets.max()! - headOffsets.min()! }
     static var bridgeSpan: Int { bridgeOffsets.max()! - bridgeOffsets.min()! }
+    static var tripleSpan: Int { tripleOffsets.max()! - tripleOffsets.min()! }
 }
 
 // MARK: - Note Slot / Block Template
@@ -69,16 +72,28 @@ struct RSOGBlockTemplate: Equatable {
         }
     )
     
+    /// TRIPLE: X-X-X on three consecutive P4-aligned strings, 3 notes × 3 strings = 9.
+    /// Always every-other-fret spacing — never a variable triad search.
+    static let triple = RSOGBlockTemplate(
+        type: .tripleBlock,
+        primaryStrings: [3, 4, 5],
+        slots: RSOGSpacingPattern.tripleOffsets.flatMap { fret in
+            [RSOGNoteSlot(stringOffset: 0, fretOffset: fret),
+             RSOGNoteSlot(stringOffset: 1, fretOffset: fret),
+             RSOGNoteSlot(stringOffset: 2, fretOffset: fret)]
+        }
+    )
+    
     static func template(for type: BlockType) -> RSOGBlockTemplate? {
         switch type {
         case .headBlock: return .head
         case .bridgeBlock: return .bridge
-        case .tripleBlock: return nil
+        case .tripleBlock: return .triple
         }
     }
 }
 
-// MARK: - String Pairs
+// MARK: - String Pairs / Triples
 
 enum RSOGStringPairs {
     /// Perfect-4th adjacent pairs — same fret numbers share diatonic alignment
@@ -92,6 +107,21 @@ enum RSOGStringPairs {
     
     static var primaryHeadPair: (Int, Int) { (1, 2) }
     static var primaryBridgePair: (Int, Int) { (4, 5) }
+}
+
+enum RSOGStringTriples {
+    /// Three consecutive strings in a continuous P4 chain (same fret columns stay aligned).
+    /// Includes one-string overflows past the physical nut-side / bridge-side edges:
+    /// string 0 = P4 above high E, string 7 = P4 below low E. Those host TRIPLEs whose
+    /// visible footprint is 6 of 9 notes on the real fretboard.
+    static let perfectFourthTriples: [(Int, Int, Int)] = [
+        (0, 1, 2), // (virtual)–e–B  — overflows above the nut-side high strings
+        (3, 4, 5), // G–D–A  (primary TRIPLE region)
+        (4, 5, 6), // D–A–E
+        (5, 6, 7)  // A–E–(virtual) — overflows below the low E
+    ]
+    
+    static var primaryTriple: (Int, Int, Int) { (3, 4, 5) }
 }
 
 // MARK: - Diatonic Triad Degrees
@@ -155,6 +185,16 @@ enum RSOGTemplate {
         key: Key,
         maxFret: Int
     ) -> [Int] {
+        spacingAnchors(offsets: offsets, strings: [stringPair.0, stringPair.1], key: key, maxFret: maxFret)
+    }
+    
+    /// Returns anchor frets where `offsets` lands entirely on in-key notes for every string.
+    static func spacingAnchors(
+        offsets: [Int],
+        strings: [Int],
+        key: Key,
+        maxFret: Int
+    ) -> [Int] {
         let keyNotes = Set(FretboardCalculator.notesInKey(key))
         let span = (offsets.max() ?? 0)
         var anchors: [Int] = []
@@ -164,9 +204,10 @@ enum RSOGTemplate {
             
             let allInKey = offsets.allSatisfy { offset in
                 let fret = anchor + offset
-                let noteA = FretboardCalculator.noteAt(string: stringPair.0, fret: fret)
-                let noteB = FretboardCalculator.noteAt(string: stringPair.1, fret: fret)
-                return keyNotes.contains(noteA) && keyNotes.contains(noteB)
+                return strings.allSatisfy { string in
+                    guard let note = noteOnString(string, fret: fret) else { return false }
+                    return keyNotes.contains(note)
+                }
             }
             
             if allInKey {
@@ -177,7 +218,27 @@ enum RSOGTemplate {
         return anchors
     }
     
-    /// Materialize fretboard positions for a HEAD or BRIDGE template at an anchor.
+    /// Open pitch for physical strings 1…6, plus P4 overflow strings 0 and 7.
+    static func openNote(forString string: Int) -> Note? {
+        switch string {
+        case 1...Constants.numberOfStrings:
+            return Constants.standardTuning[string - 1]
+        case 0:
+            return .A // perfect fourth above high E
+        case 7:
+            return .B // perfect fourth below low E
+        default:
+            return nil
+        }
+    }
+    
+    static func noteOnString(_ string: Int, fret: Int) -> Note? {
+        guard let open = openNote(forString: string), fret >= 0 else { return nil }
+        return open.addingSemitones(fret)
+    }
+    
+    /// Materialize fretboard positions for a HEAD / BRIDGE / TRIPLE template at an anchor.
+    /// TRIPLE may use overflow strings 0/7 for validation; only physical strings 1…6 are returned.
     static func positions(
         for template: RSOGBlockTemplate,
         baseString: Int,
@@ -186,22 +247,36 @@ enum RSOGTemplate {
     ) -> [FretboardPosition]? {
         var result: [FretboardPosition] = []
         let keyNotes = Set(FretboardCalculator.notesInKey(key))
+        let allowsOverflowStrings = template.type == .tripleBlock
         
         for slot in template.slots {
             let string = baseString + slot.stringOffset
             let fret = anchorFret + slot.fretOffset
-            guard string >= 1 && string <= Constants.numberOfStrings else { return nil }
             guard fret >= 0 else { return nil }
             
-            let note = FretboardCalculator.noteAt(string: string, fret: fret)
-            guard keyNotes.contains(note) else { return nil }
+            if !allowsOverflowStrings {
+                guard string >= 1 && string <= Constants.numberOfStrings else { return nil }
+            }
             
-            result.append(FretboardPosition(
-                string: string,
-                fret: fret,
-                note: note,
-                isRoot: note == key.rootNote
-            ))
+            guard let note = noteOnString(string, fret: fret),
+                  keyNotes.contains(note) else { return nil }
+            
+            // Keep only notes that sit on the real fretboard.
+            if (1...Constants.numberOfStrings).contains(string) {
+                result.append(FretboardPosition(
+                    string: string,
+                    fret: fret,
+                    note: note,
+                    isRoot: note == key.rootNote
+                ))
+            }
+        }
+        
+        if template.type == .tripleBlock {
+            // Full on-board TRIPLE = 9; one-string overflow = 6 visible notes.
+            guard result.count == 9 || result.count == 6 else { return nil }
+        } else {
+            guard result.count == template.noteCount else { return nil }
         }
         
         return result
@@ -233,6 +308,10 @@ enum RSOGTemplate {
         maxFret: Int
     ) -> [(pair: (Int, Int), anchor: Int, positions: [FretboardPosition])] {
         guard let offsets = RSOGSpacingPattern.offsets(for: template.type) else { return [] }
+        let span = offsets.max() ?? 0
+        // Validate full XX-X / X-XX even when the last column sits past maxFret;
+        // renderer clips frets beyond the visible board.
+        let searchMaxFret = maxFret + span
         
         var results: [(pair: (Int, Int), anchor: Int, positions: [FretboardPosition])] = []
         
@@ -241,9 +320,10 @@ enum RSOGTemplate {
                 offsets: offsets,
                 stringPair: pair,
                 key: key,
-                maxFret: maxFret
+                maxFret: searchMaxFret
             )
             for anchor in anchors {
+                guard anchor <= maxFret else { continue }
                 if let positions = positions(
                     for: template,
                     baseString: pair.0,
@@ -288,95 +368,37 @@ enum RSOGTemplate {
         return (anchor, positions)
     }
     
-    // MARK: TRIPLE (stacked triads)
+    // MARK: TRIPLE (X-X-X — every other half-step)
     
-    /// Find a TRIPLE block: three diatonic triad voicings (9 notes) on three consecutive strings.
-    /// Prefers I–iii–V, then I–IV–V, then any three consecutive degrees.
-    static func tripleBlock(
-        atStartString startString: Int,
-        startFret: Int,
-        key: Key,
-        maxFret: Int,
-        windowSize: Int = 5
-    ) -> (voicings: [RSOGTriadVoicing], positions: [FretboardPosition])? {
-        let strings = [startString, startString + 1, startString + 2]
-        guard strings.allSatisfy({ $0 >= 1 && $0 <= Constants.numberOfStrings }) else { return nil }
-        
-        let windowEnd = min(maxFret, startFret + windowSize)
-        guard windowEnd >= startFret else { return nil }
-        
-        // Preferred degree sets for a TRIPLE landmark.
-        let preferredSets: [[Int]] = [
-            [0, 2, 4], // I, iii, V
-            [0, 3, 4], // I, IV, V
-            [0, 1, 2], // I, ii, iii
-            [2, 4, 5], // iii, V, vi
-            [3, 4, 5], // IV, V, vi
-            [4, 5, 6], // V, vi, vii°
-            [1, 2, 3]  // ii, iii, IV
-        ]
-        
-        for degreeSet in preferredSets {
-            var voicings: [RSOGTriadVoicing] = []
-            
-            for degreeIndex in degreeSet {
-                let degree = RSOGScaleDegree.majorKeyTriads[degreeIndex]
-                if let voicing = findTriadVoicing(
-                    degree: degree,
-                    strings: strings,
-                    fretRange: startFret...windowEnd,
-                    key: key
-                ) {
-                    voicings.append(voicing)
-                }
-            }
-            
-            guard voicings.count == 3 else { continue }
-            
-            // Deduplicate shared fret positions across stacked triads.
-            var seen: Set<String> = []
-            var uniquePositions: [FretboardPosition] = []
-            for pos in voicings.flatMap(\.positions) {
-                let keyStr = "\(pos.string),\(pos.fret)"
-                if seen.insert(keyStr).inserted {
-                    uniquePositions.append(pos)
-                }
-            }
-            
-            // First preferred set that forms a complete triple wins
-            // (I–iii–V, then I–IV–V, then neighbors). Shared tones are expected.
-            if uniquePositions.count >= 5 {
-                return (voicings, uniquePositions)
-            }
-        }
-        
-        return nil
-    }
-    
-    /// Scan the fretboard for TRIPLE landmarks.
+    /// All valid TRIPLE placements: 9 in-key notes on frets [0,2,4] × 3 strings.
+    /// Anchors that start on-board but extend past `maxFret` are kept so the visible
+    /// portion can still be drawn (renderer clips frets beyond the board).
     static func allTriplePlacements(
         for key: Key,
         maxFret: Int
-    ) -> [(startString: Int, startFret: Int, voicings: [RSOGTriadVoicing], positions: [FretboardPosition])] {
-        var results: [(Int, Int, [RSOGTriadVoicing], [FretboardPosition])] = []
-        var seen: Set<String> = []
+    ) -> [(startString: Int, anchor: Int, positions: [FretboardPosition])] {
+        var results: [(startString: Int, anchor: Int, positions: [FretboardPosition])] = []
+        // Validate the full X-X-X shape even when the last column sits past maxFret.
+        let searchMaxFret = maxFret + RSOGSpacingPattern.tripleSpan
         
-        for startString in 1...(Constants.numberOfStrings - 2) {
-            for startFret in 0...maxFret {
-                guard let found = tripleBlock(
-                    atStartString: startString,
-                    startFret: startFret,
-                    key: key,
-                    maxFret: maxFret
-                ) else { continue }
-                
-                let keyStr = found.positions
-                    .map { "\($0.string),\($0.fret)" }
-                    .sorted()
-                    .joined(separator: "|")
-                
-                if seen.insert(keyStr).inserted {
-                    results.append((startString, startFret, found.voicings, found.positions))
+        for triple in RSOGStringTriples.perfectFourthTriples {
+            let strings = [triple.0, triple.1, triple.2]
+            let anchors = spacingAnchors(
+                offsets: RSOGSpacingPattern.tripleOffsets,
+                strings: strings,
+                key: key,
+                maxFret: searchMaxFret
+            )
+            for anchor in anchors {
+                // Must begin on the visible board; trailing frets may be clipped.
+                guard anchor <= maxFret else { continue }
+                if let positions = positions(
+                    for: .triple,
+                    baseString: triple.0,
+                    anchorFret: anchor,
+                    key: key
+                ) {
+                    results.append((triple.0, anchor, positions))
                 }
             }
         }
@@ -384,30 +406,33 @@ enum RSOGTemplate {
         return results
     }
     
-    /// Preferred open-position TRIPLE (lowest fret, favoring strings 3–5 then 2–4).
+    /// Preferred TRIPLE for a key: primary G–D–A strings, else D–A–E; lowest anchor.
     static func primaryTriple(
         for key: Key,
         maxFret: Int
-    ) -> (startString: Int, startFret: Int, voicings: [RSOGTriadVoicing], positions: [FretboardPosition])? {
-        let preferredStringStarts = [3, 2, 4, 1]
-        for startString in preferredStringStarts {
-            for startFret in 0...min(5, maxFret) {
-                if let found = tripleBlock(
-                    atStartString: startString,
-                    startFret: startFret,
-                    key: key,
-                    maxFret: maxFret
-                ) {
-                    return (startString, startFret, found.voicings, found.positions)
-                }
+    ) -> (startString: Int, anchor: Int, positions: [FretboardPosition])? {
+        let primary = RSOGStringTriples.primaryTriple
+        let ordered = [primary] + RSOGStringTriples.perfectFourthTriples.filter {
+            !($0.0 == primary.0 && $0.1 == primary.1 && $0.2 == primary.2)
+        }
+        let searchMaxFret = maxFret + RSOGSpacingPattern.tripleSpan
+        
+        for triple in ordered {
+            let anchors = spacingAnchors(
+                offsets: RSOGSpacingPattern.tripleOffsets,
+                strings: [triple.0, triple.1, triple.2],
+                key: key,
+                maxFret: searchMaxFret
+            )
+            if let anchor = anchors.first(where: { $0 <= maxFret }),
+               let positions = positions(for: .triple, baseString: triple.0, anchorFret: anchor, key: key) {
+                return (triple.0, anchor, positions)
             }
         }
-        return allTriplePlacements(for: key, maxFret: maxFret).first.map {
-            ($0.startString, $0.startFret, $0.voicings, $0.positions)
-        }
+        return nil
     }
     
-    /// All compact triad voicings for a degree across the fretboard.
+    /// All compact triad voicings for a degree across the fretboard (Family of Chords).
     static func allTriadVoicings(
         for degree: RSOGScaleDegree,
         key: Key,

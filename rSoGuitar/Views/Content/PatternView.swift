@@ -61,7 +61,15 @@ struct PatternView: View {
             }
             
             if showBlocks || !selectedBlockTypes.isEmpty {
-                RSOGBlockLegendView(selectedTypes: selectedBlockTypes, compact: true)
+                // Binding makes chips tappable so HEAD / BRIDGE / TRIPLE can be mixed.
+                RSOGBlockLegendView(selectedTypes: $selectedBlockTypes, compact: true)
+                    .onChange(of: selectedBlockTypes) { _, newValue in
+                        if !newValue.isEmpty && !showBlocks {
+                            showBlocks = true
+                        } else if newValue.isEmpty && showBlocks {
+                            showBlocks = false
+                        }
+                    }
             }
             
             Toggle("Show Blocks", isOn: $showBlocks)

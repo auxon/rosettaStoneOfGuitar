@@ -31,6 +31,13 @@ struct RSOGTemplateTests {
         #expect(RSOGSpacingPattern.headOffsets != RSOGSpacingPattern.bridgeOffsets)
     }
     
+    @Test func tripleSpacingIsX_X_X() {
+        #expect(RSOGSpacingPattern.tripleOffsets == [0, 2, 4])
+        #expect(RSOGTemplate.matchesSpacing([0, 2, 4], pattern: RSOGSpacingPattern.tripleOffsets))
+        #expect(RSOGTemplate.matchesSpacing([2, 4, 6], pattern: RSOGSpacingPattern.tripleOffsets))
+        #expect(!RSOGTemplate.matchesSpacing([0, 1, 3], pattern: RSOGSpacingPattern.tripleOffsets))
+    }
+    
     // MARK: - C Major HEAD (XX-X on e–B, frets 0/1/3)
     
     @Test func cMajorPrimaryHeadPositions() {
@@ -96,48 +103,80 @@ struct RSOGTemplateTests {
                 || head.stringRange != bridge.stringRange)
     }
     
-    // MARK: - C Major TRIPLE (three stacked triads)
+    // MARK: - E Major TRIPLE (canonical X-X-X — every other half-step)
     
-    @Test func cMajorPrimaryTripleHasThreeTriads() {
-        let triple = BlockGenerator.tripleBlock(for: .C, maxFret: 12)
+    @Test func eMajorPrimaryTripleIsNineNotesEveryOtherFret() {
+        let triple = BlockGenerator.tripleBlock(for: .E, maxFret: 15)
         
         #expect(triple.type == .tripleBlock)
-        #expect(triple.positions.count >= 5)
-        #expect(triple.positions.count <= 9)
-        #expect(triple.stringRange.count == 3)
+        #expect(triple.positions.count == 9)
+        #expect(triple.anchorFret == 2)
+        #expect(triple.stringRange == 3...5)
         
-        // Must include chord tones covering at least root-class diversity.
-        let notes = Set(triple.positions.map(\.note))
-        #expect(notes.count >= 3)
+        let expected: Set<String> = [
+            "3,2,A", "3,4,B", "3,6,C#",
+            "4,2,E", "4,4,F#", "4,6,G#",
+            "5,2,B", "5,4,C#", "5,6,D#"
+        ]
+        let actual = Set(triple.positions.map { "\($0.string),\($0.fret),\($0.note.rawValue)" })
+        #expect(actual == expected)
         
-        // All notes diatonic to C major.
-        let keyNotes = Set(FretboardCalculator.notesInKey(.C))
-        #expect(triple.positions.allSatisfy { keyNotes.contains($0.note) })
+        for string in 3...5 {
+            let frets = triple.positions.filter { $0.string == string }.map(\.fret).sorted()
+            #expect(RSOGTemplate.matchesSpacing(frets, pattern: RSOGSpacingPattern.tripleOffsets))
+        }
     }
     
-    @Test func cMajorTripleFindsPreferredDegreeSet() {
-        guard let primary = RSOGTemplate.primaryTriple(for: .C, maxFret: 12) else {
-            Issue.record("Expected a primary TRIPLE in C major")
+    @Test func cMajorPrimaryTripleIsNineNoteXXX() {
+        // G–D–A X-X-X at fret 10 extends to fret 14 — still discovered when maxFret is 12
+        // so the on-board columns can render clipped.
+        let triple = BlockGenerator.tripleBlock(for: .C, maxFret: 12)
+        
+        #expect(triple.positions.count == 9)
+        #expect(triple.anchorFret == 10)
+        #expect(triple.stringRange == 3...5)
+        
+        let keyNotes = Set(FretboardCalculator.notesInKey(.C))
+        #expect(triple.positions.allSatisfy { keyNotes.contains($0.note) })
+        
+        for string in triple.stringRange {
+            let frets = triple.positions.filter { $0.string == string }.map(\.fret).sorted()
+            #expect(RSOGTemplate.matchesSpacing(frets, pattern: RSOGSpacingPattern.tripleOffsets))
+        }
+    }
+    
+    @Test func allTriplePlacementsIncludesEdgeClippedAndSecondarySets() {
+        let placements = RSOGTemplate.allTriplePlacements(for: .E, maxFret: 24)
+        let keys = Set(placements.map { "\($0.startString):\($0.anchor)" })
+        
+        // On-board sets and octaves.
+        #expect(keys.contains("3:2"))
+        #expect(keys.contains("3:14"))
+        #expect(keys.contains("4:7"))
+        #expect(keys.contains("4:19"))
+        
+        // Overflow past low E / high e — visible 6-note footprints at the start of E.
+        #expect(keys.contains("5:0"))
+        #expect(keys.contains("0:0"))
+    }
+    
+    @Test func eMajorOverflowTripleShowsTwoThirdsAtNut() {
+        let placements = RSOGTemplate.allTriplePlacements(for: .E, maxFret: 12)
+        guard let overflow = placements.first(where: { $0.startString == 5 && $0.anchor == 0 }) else {
+            Issue.record("Expected A–E–(virtual) TRIPLE at open position in E")
             return
         }
         
-        #expect(primary.voicings.count == 3)
-        let numerals = Set(primary.voicings.map(\.degree.romanNumeral))
+        // 6 physical notes (2/3 of the 9-note X-X-X); third string is below low E.
+        #expect(overflow.positions.count == 6)
+        #expect(Set(overflow.positions.map(\.string)) == [5, 6])
         
-        // Open-position C major prefers the I–iii–V stacked-triad landmark.
-        #expect(numerals == ["I", "iii", "V"])
-        
-        for voicing in primary.voicings {
-            #expect(voicing.positions.count == 3)
-            let strings = Set(voicing.positions.map(\.string))
-            #expect(strings.count == 3)
-        }
-        
-        // Reference open-position stack on strings 3–5 includes the C triad landmark.
-        let keys = Set(primary.positions.map { "\($0.string),\($0.fret),\($0.note.rawValue)" })
-        #expect(keys.contains("3,0,G"))
-        #expect(keys.contains("4,2,E"))
-        #expect(keys.contains("5,3,C"))
+        let expected: Set<String> = [
+            "5,0,A", "5,2,B", "5,4,C#",
+            "6,0,E", "6,2,F#", "6,4,G#"
+        ]
+        let actual = Set(overflow.positions.map { "\($0.string),\($0.fret),\($0.note.rawValue)" })
+        #expect(actual == expected)
     }
     
     // MARK: - Sequential Tiling

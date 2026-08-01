@@ -45,9 +45,9 @@ struct BlockOverlayView: View {
                 blocks: blocks,
                 selectedTypes: selectedBlockTypes,
                 offsets: blockOffsets,
-                showRegions: true,
-                showSpacingMarkers: true,
-                showBrackets: true
+                showOutlines: true,
+                showNotePips: true,
+                showLabels: true
             )
         }
         .frame(width: fretboardSize.width, height: fretboardSize.height)
