@@ -39,6 +39,14 @@ struct MainTabView: View {
                 Label("Concepts", systemImage: "brain.head.profile")
             }
             
+            // Rhythm — metronome, play-alongs, tutorials
+            NavigationView {
+                RhythmRootView()
+            }
+            .tabItem {
+                Label("Rhythm", systemImage: "metronome.fill")
+            }
+            
             // Tuner
             TunerView()
             .tabItem {

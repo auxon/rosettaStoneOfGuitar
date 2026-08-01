@@ -37,6 +37,7 @@ struct PremiumGateView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     FeatureRow(icon: "book.fill", text: "All Premium Lessons")
                     FeatureRow(icon: "music.note.list", text: "Advanced Patterns")
+                    FeatureRow(icon: "metronome.fill", text: "Premium Rhythm Patterns & Tutorials")
                     FeatureRow(icon: "keyboard", text: "Key Changes & Modes")
                     FeatureRow(icon: "guitars.fill", text: "Exotic Scales")
                     FeatureRow(icon: "chart.bar.fill", text: "Progress Tracking")

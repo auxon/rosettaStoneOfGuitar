@@ -42,11 +42,23 @@ class TunerViewModel: ObservableObject {
         ("G#", 25.96), ("A", 27.50), ("A#", 29.14), ("B", 30.87)
     ]
     
+    private var metronomeObserver: NSObjectProtocol?
+    
     init() {
         updateTargetStrings()
+        metronomeObserver = NotificationCenter.default.addObserver(
+            forName: .metronomeWillStart,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.stopListening()
+        }
     }
     
     deinit {
+        if let metronomeObserver {
+            NotificationCenter.default.removeObserver(metronomeObserver)
+        }
         stopListening()
     }
     
@@ -84,6 +96,9 @@ class TunerViewModel: ObservableObject {
             requestPermission()
             return
         }
+        
+        // Metronome and tuner share AVAudioSession — stop click clock first.
+        MetronomeService.shared.stop()
         
         setupAudioEngine()
         

@@ -7,6 +7,7 @@
 //
 
 import Testing
+import CoreGraphics
 @testable import rSoGuitar
 
 struct RSOGValidationTests {
@@ -125,9 +126,9 @@ struct RSOGValidationTests {
             // Each group has at least one compact triad voicing footprint.
             for group in pattern.chordGroups {
                 #expect(group.positions.count >= 3)
-                #expect(group.positions.contains(where: \.isTriadRoot))
-                #expect(group.positions.contains(where: \.isTriadThird))
-                #expect(group.positions.contains(where: \.isTriadFifth))
+                #expect(group.positions.contains { $0.isTriadRoot })
+                #expect(group.positions.contains { $0.isTriadThird })
+                #expect(group.positions.contains { $0.isTriadFifth })
             }
             
             // Horizontal family: roots of I/IV/V are not all the same note.
