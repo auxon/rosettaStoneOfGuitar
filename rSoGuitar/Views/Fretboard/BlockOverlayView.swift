@@ -55,7 +55,7 @@ struct BlockOverlayView: View {
 }
 
 #Preview {
-    let blocks = BlockGenerator.allBlocks(for: .C, maxFret: 12)
+    let blocks = BlockGenerator.tiledBlocks(for: .C, maxFret: 12)
     let pattern = BlockGenerator.diatonicPattern(for: .C, maxFret: 12)
     BlockOverlayView(
         blocks: blocks,

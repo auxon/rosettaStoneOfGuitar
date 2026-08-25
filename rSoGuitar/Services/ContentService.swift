@@ -63,6 +63,27 @@ class ContentService {
         }
     }
     
+    /// Same concept as `pattern`, relocated to `key`. Jumping keeps the original
+    /// start string and shifts the fret by the key's distance from the source.
+    func pattern(_ pattern: Pattern, in key: Key) -> Pattern {
+        guard pattern.key != key else { return pattern }
+        
+        var start: FretboardPosition?
+        if pattern.type == .jumping, let original = pattern.positions.first {
+            let delta = ((key.rootNote.semitonesFromC - pattern.key.rootNote.semitonesFromC) % 12 + 12) % 12
+            var fret = original.fret + delta
+            while fret > Constants.defaultFretCount { fret -= 12 }
+            let note = FretboardCalculator.noteAt(string: original.string, fret: fret)
+            start = FretboardPosition(
+                string: original.string,
+                fret: fret,
+                note: note,
+                isRoot: note == key.rootNote
+            )
+        }
+        return generatePattern(type: pattern.type, key: key, startPosition: start)
+    }
+    
     // MARK: - Private Methods
     
     private func loadDefaultContent() {
@@ -99,7 +120,7 @@ class ContentService {
             .text("Follow the orange path column by column. The HEAD block (XX-X on the high strings) is your entry milestone: once you spot it, you know where the entire pattern sits."),
             .text("Root notes are emphasized; other diatonic notes fill the spiral. Toggle blocks to isolate HEAD while you learn the path."),
             .fretboardDemo(spiralPattern),
-            .text("Change keys later in the Fretboard Explorer — the spiral shape stays the same; only its position on the neck moves. That is key-independent projection."),
+            .text("Use the key picker to move this same spiral to any key — the shape stays the same; only its position on the neck moves. That is key-independent projection."),
             .exercise(Exercise(
                 title: "Spiral Mapping Practice",
                 instructions: "Trace the spiral path in C major. Enable the HEAD block and notice how the XX-X landmark anchors the pattern. Tap roots along the path to hear the key center.",

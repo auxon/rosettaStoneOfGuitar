@@ -12,54 +12,55 @@ struct MainTabView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var subscriptionService: SubscriptionService
     @StateObject private var progressService = ProgressService.shared
+    @State private var selectedTab: AppRootTab = AppRootTab.fromLaunchArguments()
     
     var body: some View {
-        TabView {
-            // Lessons
-            NavigationView {
+        TabView(selection: $selectedTab) {
+            NavigationStack {
                 LessonListView()
             }
             .tabItem {
                 Label("Lessons", systemImage: "book.fill")
             }
+            .tag(AppRootTab.lessons)
             
-            // Fretboard Explorer — primary rSoG workspace
             NavigationView {
                 FretboardView()
             }
             .tabItem {
                 Label("Fretboard", systemImage: "guitars.fill")
             }
+            .tag(AppRootTab.fretboard)
             
-            // Concepts (before Tuner so methodology stays front-of-mind)
-            NavigationView {
+            NavigationStack {
                 ConceptsListView()
             }
             .tabItem {
                 Label("Concepts", systemImage: "brain.head.profile")
             }
+            .tag(AppRootTab.concepts)
             
-            // Rhythm — metronome, play-alongs, tutorials
             NavigationView {
                 RhythmRootView()
             }
             .tabItem {
                 Label("Rhythm", systemImage: "metronome.fill")
             }
+            .tag(AppRootTab.rhythm)
             
-            // Tuner
             TunerView()
             .tabItem {
                 Label("Tuner", systemImage: "tuningfork")
             }
+            .tag(AppRootTab.tuner)
             
-            // Profile
             NavigationView {
                 ProfileView()
             }
             .tabItem {
                 Label("Profile", systemImage: "person.fill")
             }
+            .tag(AppRootTab.profile)
         }
         .onAppear {
             subscriptionService.setModelContext(modelContext)
@@ -68,7 +69,23 @@ struct MainTabView: View {
     }
 }
 
+enum AppRootTab: String, Hashable {
+    case lessons, fretboard, concepts, rhythm, tuner, profile
+    
+    static func fromLaunchArguments() -> AppRootTab {
+        let args = ProcessInfo.processInfo.arguments
+        if let idx = args.firstIndex(of: "-rsogTab"),
+           idx + 1 < args.count,
+           let tab = AppRootTab(rawValue: args[idx + 1]) {
+            return tab
+        }
+        return .lessons
+    }
+}
+
 struct ConceptsListView: View {
+    @State private var openSpiralConcept = false
+    
     var body: some View {
         List {
             Section {
@@ -124,6 +141,14 @@ struct ConceptsListView: View {
             }
         }
         .navigationTitle("Concepts")
+        .navigationDestination(isPresented: $openSpiralConcept) {
+            ConceptView(conceptType: .spiralMapping)
+        }
+        .onAppear {
+            if ProcessInfo.processInfo.arguments.contains("-rsogOpenSpiralConcept") {
+                openSpiralConcept = true
+            }
+        }
     }
     
     private func icon(for type: PatternType) -> String {

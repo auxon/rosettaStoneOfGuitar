@@ -63,122 +63,308 @@ struct BlockGenerator {
     
     // MARK: - Spiral Run & Block Tiling
 
-    /// The spiral run: the diatonic walk used by Spiral Mapping and block
-    /// tiling alike. Takes consecutive groups of 3 in-key notes per string,
-    /// winding low E (6) → high E (1), wrapping around to the next group on
-    /// the low E string each pass — 3 notes per string, no note unmapped.
+    /// The spiral run: ascending 3-notes-per-string through the key, winding
+    /// low E (6) → high E (1). After the high-E row, the helix wraps onto low E
+    /// at the **same frets** (in C: F G A on high e → F G A on low E), then
+    /// continues up the neck. High E and low E are the same string around the
+    /// cylinder — that wrap is the spiral, not a jump to the next scale degree.
+    ///
+    /// The canonical shape is C major starting on open low-E (scale degree 2,
+    /// the major third — “mi”). Every other key uses that same 3NPS phase, so
+    /// the geometry is identical and only shifts by `root − C` frets. Starting
+    /// at “lowest in-key fret” instead would desync the phase (e.g. G major
+    /// beginning on open E / degree 5) and scramble HEAD/BRIDGE/TRIPLE.
     static func spiralRun(for key: Key, maxFret: Int) -> [FretboardPosition] {
-        let keyNotes = Set(FretboardCalculator.notesInKey(key))
-        var perString: [(notes: [FretboardPosition], count: Int)] = []
-
+        var run = spiralHelix(for: key, maxFret: maxFret)
+        let scale = FretboardCalculator.notesInKey(key)
+        var covered = Set(run.map(\.coordinateKey))
         for string in stride(from: Constants.numberOfStrings, through: 1, by: -1) {
-            var notes: [FretboardPosition] = []
             for fret in 0...maxFret {
                 let note = FretboardCalculator.noteAt(string: string, fret: fret)
-                guard keyNotes.contains(note) else { continue }
-                notes.append(FretboardPosition(
+                guard scale.contains(note) else { continue }
+                let pos = FretboardPosition(
                     string: string,
                     fret: fret,
                     note: note,
                     isRoot: note == key.rootNote,
                     scaleDegree: FretboardCalculator.scaleDegree(of: note, in: key)
-                ))
+                )
+                guard covered.insert(pos.coordinateKey).inserted else { continue }
+                run.append(pos)
             }
-            perString.append((notes, notes.count))
-        }
-
-        var run: [FretboardPosition] = []
-        var pass = 0
-        while true {
-            var addedAny = false
-            for entry in perString {
-                let start = pass * 3
-                guard start < entry.count else { continue }
-                let slice = entry.notes[start..<min(start + 3, entry.count)]
-                run.append(contentsOf: slice)
-                addedAny = addedAny || !slice.isEmpty
-            }
-            if !addedAny { break }
-            pass += 1
         }
         return run
     }
-
-    /// Tile the spiral run with the canonical block cycle
-    /// [HEAD · 6 notes][BRIDGE · 6 notes][TRIPLE · 9 notes], anchored per key.
-    ///
-    /// Anchor rule: the cycle begins 3 run-notes before the low-E string's
-    /// tonic fret (for C, fret 0). The first HEAD therefore spans the virtual
-    /// string 7 (perfect 4th below low E) plus the low E itself — only its
-    /// low-E half is visible, so home position shows HALF a HEAD block.
-    /// The first TRIPLE spans strings G–B–e; its B-string row sits one fret
-    /// off the P4 lattice — the G–B major-third shift — which emerges
-    /// automatically because every note is a real fretboard position.
-    /// Blocks cut off at the fretboard edges render as partial blocks.
-    static func tiledBlocks(for key: Key, maxFret: Int) -> [Block] {
-        let run = spiralRun(for: key, maxFret: maxFret)
-        let delta = ((key.rootNote.semitonesFromC % 12) + 12) % 12
-
-        guard let anchor = run.firstIndex(where: {
-            $0.string == Constants.numberOfStrings && $0.fret == delta
-        }) else { return [] }
-
-        // Virtual prepend — degrees ti–do–re on virtual string 7 (open B),
-        // completing the first HEAD below the physical low E string.
-        let prepend: [FretboardPosition] = [11, 0, 2].map { interval in
-            let letter = key.rootNote.addingSemitones(interval)
-            let fret = ((letter.semitonesFromC - Note.B.semitonesFromC) % 12 + 12) % 12
-            return FretboardPosition(
-                string: 7,
-                fret: fret,
-                note: letter,
-                isRoot: letter == key.rootNote
-            )
-        }
-
-        func position(at index: Int) -> FretboardPosition? {
-            if index < 0 {
-                let idx = index + prepend.count
-                return idx >= 0 ? prepend[idx] : nil
+    
+    /// Helix-only walk used for HEAD/BRIDGE/TRIPLE tiling (no leftover fill).
+    static func spiralHelix(for key: Key, maxFret: Int) -> [FretboardPosition] {
+        let scale = FretboardCalculator.notesInKey(key)
+        guard scale.count == 7 else { return [] }
+        
+        // Same scale role as open E in C (degree index 2). For key K this lands
+        // on low E at fret (K.root − C), i.e. the transposed home position.
+        var nextDegree = 2
+        var run: [FretboardPosition] = []
+        var overlapFloor: [Int: Int] = [:]
+        var lastHighEChunk: [FretboardPosition] = []
+        let maxPasses = max(1, maxFret / 2 + 4)
+        
+        passLoop: for pass in 0..<maxPasses {
+            // Helix wrap: high E and low E are the same string around the
+            // cylinder. After F G A on high e, the TRIPLE's third row continues
+            // as F G A on low E at the same frets — not a jump to the next
+            // scale degree (B) further up the neck.
+            if pass > 0 {
+                guard lastHighEChunk.count == 3 else { break passLoop }
+                var wrap: [FretboardPosition] = []
+                wrap.reserveCapacity(3)
+                for pos in lastHighEChunk {
+                    guard pos.fret <= maxFret else { break passLoop }
+                    wrap.append(FretboardPosition(
+                        string: Constants.numberOfStrings,
+                        fret: pos.fret,
+                        note: pos.note,
+                        isRoot: pos.note == key.rootNote,
+                        scaleDegree: pos.scaleDegree
+                    ))
+                }
+                run.append(contentsOf: wrap)
             }
-            return index < run.count ? run[index] : nil
+            
+            // Pass 0 walks all 6 strings. Later passes start on A (5): the next
+            // HEAD is B–C–D / E–F–G on A–D, tiling horizontally. Low E already
+            // received the wrap row.
+            let strings: [Int] = pass == 0
+                ? Array(stride(from: Constants.numberOfStrings, through: 1, by: -1))
+                : Array(stride(from: Constants.numberOfStrings - 1, through: 1, by: -1))
+            
+            var placedThisPass = 0
+            for string in strings {
+                // Pass 0: nutward 3NPS. Later: overlap the previous chunk's
+                // 2nd note so the next in-key fret (D on A, G on D, …) is not skipped.
+                var fretFloor = pass == 0 ? 0 : (overlapFloor[string] ?? 0)
+                var chunk: [FretboardPosition] = []
+                chunk.reserveCapacity(3)
+                
+                for _ in 0..<3 {
+                    let note = scale[nextDegree % 7]
+                    guard let fret = Self.fret(
+                        for: note,
+                        on: string,
+                        minFret: fretFloor,
+                        maxFret: maxFret
+                    ) else {
+                        break passLoop
+                    }
+                    chunk.append(FretboardPosition(
+                        string: string,
+                        fret: fret,
+                        note: note,
+                        isRoot: note == key.rootNote,
+                        scaleDegree: nextDegree % 7
+                    ))
+                    fretFloor = fret + 1
+                    nextDegree += 1
+                }
+                
+                run.append(contentsOf: chunk)
+                placedThisPass += chunk.count
+                if chunk.count >= 2 {
+                    overlapFloor[string] = chunk[1].fret
+                }
+                if string == 1 {
+                    lastHighEChunk = chunk
+                }
+            }
+            if placedThisPass == 0 { break }
         }
+        return run
+    }
+    
+    /// Lowest fret of `note` on `string` that is ≥ `minFret` and ≤ `maxFret`.
+    private static func fret(
+        for note: Note,
+        on string: Int,
+        minFret: Int,
+        maxFret: Int
+    ) -> Int? {
+        guard string >= 1, string <= FretboardCalculator.standardTuning.count else { return nil }
+        let open = FretboardCalculator.standardTuning[string - 1]
+        var fret = (note.semitonesFromC - open.semitonesFromC + 12) % 12
+        while fret < minFret { fret += 12 }
+        return fret <= maxFret ? fret : nil
+    }
 
-        let cycle: [(type: BlockType, size: Int)] = [
-            (.headBlock, 6), (.bridgeBlock, 6), (.tripleBlock, 9)
-        ]
-
+    /// Partition the 3NPS helix into HEAD → BRIDGE → TRIPLE.
+    ///
+    /// Each helix row is 3 notes on one string. Fret spacing picks the rule:
+    /// HEAD XX-X `[0,1,3]`, BRIDGE X-XX `[0,2,3]`, TRIPLE X-X-X `[0,2,4]`.
+    ///
+    /// Blocks are only those shapes, walking strings down the neck (6→1):
+    /// - HEAD:   two adjacent strings, or one XX-X row at the nut (partial).
+    /// - BRIDGE: two adjacent strings.
+    /// - TRIPLE: three adjacent strings. High e’s unison copy on low E is the
+    ///   wrap (same notes/frets), not a 1→6 string step. After a wrap, the next
+    ///   TRIPLE may *start* on low E (6→5→4): in C, G A B at 3-5-7, then
+    ///   C D E / F G A on A–D. High e just before that wrap is the same unison.
+    static func tiledBlocks(for key: Key, maxFret: Int) -> [Block] {
+        let run = spiralHelix(for: key, maxFret: maxFret)
+        let rows = spiralRows(from: run)
+        
         var blocks: [Block] = []
         var sequenceIndex = 0
-        var sliceStart = anchor - 3
-
-        while sliceStart < run.count {
-            for (type, size) in cycle {
-                var positions: [FretboardPosition] = []
-                var seen: Set<String> = []
-                for i in sliceStart..<(sliceStart + size) {
-                    guard let pos = position(at: i),
-                          (1...Constants.numberOfStrings).contains(pos.string),
-                          seen.insert(pos.coordinateKey).inserted else { continue }
-                    positions.append(pos)
-                }
-
-                if !positions.isEmpty {
-                    blocks.append(makeBlock(
-                        type: type,
-                        name: RSOGConceptInfo.blockTitle(type),
-                        description: tiledBlockDescription(type, notes: positions.count),
-                        positions: positions,
-                        anchorFret: positions.map(\.fret).min() ?? 0,
-                        sequenceIndex: sequenceIndex
-                    ))
-                    sequenceIndex += 1
-                }
-                sliceStart += size
-            }
+        var i = 0
+        
+        func emit(_ type: BlockType, from used: [SpiralRow]) {
+            let positions = used.flatMap(\.positions)
+            guard !positions.isEmpty else { return }
+            blocks.append(makeBlock(
+                type: type,
+                name: RSOGConceptInfo.blockTitle(type),
+                description: tiledBlockDescription(type, notes: positions.count),
+                positions: positions,
+                anchorFret: positions.map(\.fret).min() ?? 0,
+                sequenceIndex: sequenceIndex,
+                runStart: used.map(\.runStart).min() ?? 0,
+                runEnd: used.map(\.runEnd).max() ?? 0
+            ))
+            sequenceIndex += 1
         }
-
+        
+        func descending(_ strings: [Int]) -> Bool {
+            zip(strings, strings.dropFirst()).allSatisfy { $0 - 1 == $1 }
+        }
+        
+        func isUnisonWrap(_ a: SpiralRow, _ b: SpiralRow) -> Bool {
+            a.string == 1 && b.isWrap && b.string == Constants.numberOfStrings
+                && zip(a.positions, b.positions).allSatisfy { $0.fret == $1.fret && $0.note == $1.note }
+        }
+        
+        /// Three XXX rows on n, n-1, n-2. Wrap-started 6→5→4 also consumes the
+        /// high-e unison sitting immediately before the wrap.
+        func takeTriple(at index: Int) -> (used: [SpiralRow], consumed: Int)? {
+            func trio(at start: Int) -> [SpiralRow]? {
+                guard start + 2 < rows.count else { return nil }
+                let group = Array(rows[start..<(start + 3)])
+                guard group.allSatisfy({ $0.rule == .tripleBlock }),
+                      descending(group.map(\.string)) else { return nil }
+                return group
+            }
+            
+            let wrapStart: Int?
+            if rows[index].isWrap {
+                wrapStart = index
+            } else if index + 1 < rows.count, isUnisonWrap(rows[index], rows[index + 1]) {
+                wrapStart = index + 1
+            } else {
+                wrapStart = nil
+            }
+            
+            if let wrapStart, let group = trio(at: wrapStart) {
+                if wrapStart > index {
+                    return ([rows[index]] + group, 4)
+                }
+                return (group, 3)
+            }
+            
+            guard let group = trio(at: index) else { return nil }
+            if group[2].string == 1,
+               index + 3 < rows.count,
+               rows[index + 3].isWrap {
+                return (group + [rows[index + 3]], 4)
+            }
+            return (group, 3)
+        }
+        
+        func takePair(at index: Int, rule: BlockType) -> [SpiralRow]? {
+            guard index + 1 < rows.count,
+                  rows[index].rule == rule,
+                  rows[index + 1].rule == rule,
+                  descending([rows[index].string, rows[index + 1].string]) else {
+                return nil
+            }
+            return Array(rows[index..<(index + 2)])
+        }
+        
+        while i < rows.count {
+            if let taken = takeTriple(at: i) {
+                emit(.tripleBlock, from: taken.used)
+                i += taken.consumed
+                continue
+            }
+            if let pair = takePair(at: i, rule: .headBlock) {
+                emit(.headBlock, from: pair)
+                i += 2
+                continue
+            }
+            if let pair = takePair(at: i, rule: .bridgeBlock) {
+                emit(.bridgeBlock, from: pair)
+                i += 2
+                continue
+            }
+            if rows[i].rule == .headBlock, !rows[i].isWrap {
+                emit(.headBlock, from: [rows[i]])
+            }
+            i += 1
+        }
+        
         return blocks
+    }
+    
+    private struct SpiralRow {
+        let runStart: Int
+        let runEnd: Int
+        let string: Int
+        let positions: [FretboardPosition]
+        let isWrap: Bool
+        
+        var rule: BlockType? {
+            let frets = positions.map(\.fret)
+            if RSOGTemplate.matchesSpacing(frets, pattern: RSOGSpacingPattern.headOffsets) { return .headBlock }
+            if RSOGTemplate.matchesSpacing(frets, pattern: RSOGSpacingPattern.bridgeOffsets) { return .bridgeBlock }
+            if RSOGTemplate.matchesSpacing(frets, pattern: RSOGSpacingPattern.tripleOffsets) { return .tripleBlock }
+            return nil
+        }
+    }
+    
+    /// 3-note helix rows, marking unison e→E copies as wraps (not their own block row).
+    private static func spiralRows(from run: [FretboardPosition]) -> [SpiralRow] {
+        var rows: [SpiralRow] = []
+        var index = 0
+        while index + 2 < run.count {
+            let slice = Array(run[index..<(index + 3)])
+            guard slice.allSatisfy({ $0.string == slice[0].string }) else {
+                index += 1
+                continue
+            }
+            let isWrap: Bool
+            if let prev = rows.last, !prev.isWrap, prev.string == 1, slice[0].string == Constants.numberOfStrings {
+                isWrap = zip(prev.positions, slice).allSatisfy { $0.fret == $1.fret && $0.note == $1.note }
+            } else {
+                isWrap = false
+            }
+            rows.append(SpiralRow(
+                runStart: index,
+                runEnd: index + 3,
+                string: slice[0].string,
+                positions: slice,
+                isWrap: isWrap
+            ))
+            index += 3
+        }
+        return rows
+    }
+    
+    /// The HEAD/BRIDGE/TRIPLE cycle that contains `runIndex` (scrubber-synced).
+    static func visibleTiledBlocks(for key: Key, maxFret: Int, atRunIndex runIndex: Int) -> [Block] {
+        cycleContaining(runIndex: runIndex, in: tiledBlocks(for: key, maxFret: maxFret))
+    }
+    
+    static func cycleContaining(runIndex: Int, in blocks: [Block]) -> [Block] {
+        guard !blocks.isEmpty else { return [] }
+        let match = blocks.last(where: { $0.coversRunIndex(runIndex) }) ?? blocks[0]
+        let cycleStart = (match.sequenceIndex / 3) * 3
+        return blocks.filter { $0.sequenceIndex >= cycleStart && $0.sequenceIndex < cycleStart + 3 }
     }
 
     private static func tiledBlockDescription(_ type: BlockType, notes: Int) -> String {
@@ -194,7 +380,7 @@ struct BlockGenerator {
         case .bridgeBlock:
             return "\(label) BRIDGE block — 3 notes per string on the A and D strings, the transitional zone between HEAD and TRIPLE."
         case .tripleBlock:
-            return "\(label) TRIPLE block — 3 notes per string across G, B, and high E. The B-string row shifts one fret at the G–B major-third crossing."
+            return "\(label) TRIPLE block — 3 notes per string across G, B, and high E. The third row wraps onto low E as the same notes (the helix), then the B-string row shifts one fret at the G–B crossing."
         }
     }
 
@@ -306,7 +492,9 @@ struct BlockGenerator {
         description: String,
         positions: [FretboardPosition],
         anchorFret: Int,
-        sequenceIndex: Int = 0
+        sequenceIndex: Int = 0,
+        runStart: Int = 0,
+        runEnd: Int = 0
     ) -> Block {
         let frets = positions.map(\.fret)
         let strings = positions.map(\.string)
@@ -323,7 +511,9 @@ struct BlockGenerator {
             stringRange: minString...maxString,
             positions: positions,
             anchorFret: anchorFret,
-            sequenceIndex: sequenceIndex
+            sequenceIndex: sequenceIndex,
+            runStart: runStart,
+            runEnd: runEnd
         )
     }
     

@@ -11,6 +11,7 @@ struct LessonListView: View {
     @StateObject private var viewModel = LessonViewModel()
     @EnvironmentObject var subscriptionService: SubscriptionService
     @State private var showingPremiumGate = false
+    @State private var showSpiralLesson = false
     
     var body: some View {
         List {
@@ -28,8 +29,18 @@ struct LessonListView: View {
             }
         }
         .navigationTitle("Lessons")
+        .navigationDestination(isPresented: $showSpiralLesson) {
+            if let lesson = viewModel.lessons.first(where: { $0.title == "Spiral Mapping" }) {
+                LessonDetailView(lesson: lesson)
+            }
+        }
         .sheet(isPresented: $showingPremiumGate) {
             PremiumGateView()
+        }
+        .onAppear {
+            if ProcessInfo.processInfo.arguments.contains("-rsogOpenSpiral") {
+                showSpiralLesson = true
+            }
         }
     }
 }

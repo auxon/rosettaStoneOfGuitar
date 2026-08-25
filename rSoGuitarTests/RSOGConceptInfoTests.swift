@@ -11,7 +11,7 @@ import Testing
 struct RSOGConceptInfoTests {
     
     @Test func demoBlocksMatchTeachingEmphasis() {
-        #expect(RSOGConceptInfo.demoBlocks(for: .spiralMapping) == [.headBlock])
+        #expect(RSOGConceptInfo.demoBlocks(for: .spiralMapping) == [.headBlock, .bridgeBlock, .tripleBlock])
         #expect(RSOGConceptInfo.demoBlocks(for: .jumping) == [.bridgeBlock])
         #expect(RSOGConceptInfo.demoBlocks(for: .familyOfChords).contains(.tripleBlock))
         #expect(RSOGConceptInfo.demoBlocks(for: .familialHierarchy) == [.tripleBlock])

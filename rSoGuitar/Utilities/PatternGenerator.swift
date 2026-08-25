@@ -37,7 +37,7 @@ struct PatternGenerator {
             type: .spiralMapping,
             key: key,
             positions: positions,
-            description: "Spiral mapping winds up the neck like a helix: 3 notes per string, low E → high E, wrapping around to the continuing note on the low E string — never retracing, leaving no in-key note unmapped.",
+            description: "Spiral mapping winds up the neck like a helix: 3 ascending scale notes per string, low E → high E, then the last high-E row wraps onto low E at the same frets (in C: A on high e → F G A on low E) before continuing up the neck.",
             connections: connections
         )
     }

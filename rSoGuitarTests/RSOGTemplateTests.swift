@@ -319,17 +319,127 @@ struct RSOGTemplateTests {
     @Test func spiralRunWrapsHighEToLowE() {
         let run = BlockGenerator.spiralRun(for: .C, maxFret: 12)
         #expect(!run.isEmpty)
-        #expect(run.count % 3 == 0)
         
         // First pass: strings 6→1, three notes each.
         let firstPass = Array(run.prefix(18))
         #expect(firstPass.map(\.string) == [6,6,6, 5,5,5, 4,4,4, 3,3,3, 2,2,2, 1,1,1])
         
-        // Helix wrap: after high E, next note is back on low E (not bouncing).
-        if run.count > 18 {
-            #expect(run[18].string == 6)
-            #expect(run[17].string == 1)
+        // Helix wrap: TRIPLE third row continues onto low E at the same frets
+        // (F G A), not a jump from A on high e to B further up the neck.
+        #expect(run.count > 21)
+        #expect(run[17].string == 1 && run[17].note == .A)
+        let wrap = Array(run[18..<21])
+        #expect(wrap.map(\.string) == [6, 6, 6])
+        #expect(wrap.map(\.note) == [.F, .G, .A])
+        #expect(wrap.map(\.fret) == [1, 3, 5])
+        // Next HEAD starts on the A string: B C D (XX-X), then E F G on D —
+        // not B on low E at fret 7.
+        #expect(run[21].string == 5 && run[21].note == .B && run[21].fret == 2)
+        #expect(run[22].string == 5 && run[22].note == .C && run[22].fret == 3)
+        #expect(run[23].string == 5 && run[23].note == .D && run[23].fret == 5)
+        #expect(run[24].string == 4 && run[24].note == .E && run[24].fret == 2)
+        #expect(run[25].string == 4 && run[25].note == .F && run[25].fret == 3)
+        #expect(run[26].string == 4 && run[26].note == .G && run[26].fret == 5)
+    }
+    
+    @Test func tiledBlocksContinueHorizontallyAfterWrap() {
+        let blocks = BlockGenerator.tiledBlocks(for: .C, maxFret: 12)
+        #expect(blocks.count >= 4)
+        #expect(blocks[0].type == .headBlock)
+        #expect(blocks[1].type == .bridgeBlock)
+        #expect(blocks[2].type == .tripleBlock)
+        
+        let nextHead = blocks[3]
+        #expect(nextHead.type == .headBlock)
+        #expect(Set(nextHead.positions.map(\.string)) == [4, 5])
+        func notes(_ block: Block, string: Int) -> [String] {
+            block.positions.filter { $0.string == string }.map(\.note.rawValue)
         }
+        #expect(notes(nextHead, string: 5) == ["B", "C", "D"])
+        #expect(notes(nextHead, string: 4) == ["E", "F", "G"])
+    }
+    
+    @Test func tripleStartsAtGOnLowEInC() {
+        let triples = BlockGenerator.tiledBlocks(for: .C, maxFret: 12)
+            .filter { $0.type == .tripleBlock }
+        
+        func notes(_ block: Block, string: Int) -> [String] {
+            block.positions.filter { $0.string == string }.map(\.note.rawValue)
+        }
+        
+        let fromG = triples.first { block in
+            let lowE = block.positions.filter { $0.string == 6 }
+            return lowE.map(\.note) == [.G, .A, .B] && lowE.map(\.fret) == [3, 5, 7]
+        }
+        #expect(fromG != nil, "Expected TRIPLE starting at G on low E (3-5-7)")
+        guard let triple = fromG else { return }
+        #expect(Set(triple.positions.map(\.string)) == [1, 4, 5, 6])
+        #expect(notes(triple, string: 1) == ["G", "A", "B"])
+        #expect(notes(triple, string: 6) == ["G", "A", "B"])
+        #expect(notes(triple, string: 5) == ["C", "D", "E"])
+        #expect(notes(triple, string: 4) == ["F", "G", "A"])
+    }
+    
+    @Test func tiledBlocksKeepHeadBridgeTripleCycle() {
+        let blocks = BlockGenerator.tiledBlocks(for: .C, maxFret: 12)
+        #expect(blocks.count >= 6)
+        let cycle: [BlockType] = [.headBlock, .bridgeBlock, .tripleBlock]
+        for (index, block) in blocks.prefix(6).enumerated() {
+            #expect(block.type == cycle[index % 3], "Block \(index) should be \(cycle[index % 3])")
+        }
+    }
+    
+    @Test func visibleBlocksFollowScrubberCycleOfThree() {
+        let all = BlockGenerator.tiledBlocks(for: .C, maxFret: 12)
+        #expect(all.count >= 3)
+        
+        let home = BlockGenerator.cycleContaining(runIndex: 0, in: all)
+        #expect(home.map(\.type) == [.headBlock, .bridgeBlock, .tripleBlock])
+        #expect(home.count == 3)
+        
+        // After wrap, A-string B C D is the next HEAD (with its BRIDGE). A fake
+        // 9-note slice is not promoted to TRIPLE.
+        let next = BlockGenerator.cycleContaining(runIndex: 21, in: all)
+        #expect(next.first?.type == .headBlock)
+        let aString = next[0].positions.filter { $0.string == 5 }.map(\.note)
+        #expect(aString == [.B, .C, .D])
+        #expect(Set(next.map(\.sequenceIndex)) != Set(home.map(\.sequenceIndex)))
+    }
+    
+    @Test func everyTripleIsThreeAdjacentStringsXXX() {
+        let blocks = BlockGenerator.tiledBlocks(for: .C, maxFret: 12)
+        let triples = blocks.filter { $0.type == .tripleBlock }
+        #expect(!triples.isEmpty)
+        for triple in triples {
+            let strings = Set(triple.positions.map(\.string))
+            let highE = triple.positions.filter { $0.string == 1 }.map(\.fret).sorted()
+            let lowE = triple.positions.filter { $0.string == 6 }.map(\.fret).sorted()
+            let hasWrap = !highE.isEmpty && highE == lowE
+            // Trailing wrap (G–B–e): drop low E. Leading wrap (e + E–A–D): drop high e.
+            let core: [Int]
+            if hasWrap, strings.isSuperset(of: [1, 4, 5, 6]) {
+                core = [4, 5, 6]
+            } else if hasWrap {
+                core = strings.subtracting([6]).sorted()
+            } else {
+                core = strings.sorted()
+            }
+            #expect(core.count == 3, "TRIPLE core strings \(core) from \(strings)")
+            #expect(core[0] + 1 == core[1] && core[1] + 1 == core[2])
+            for string in core {
+                let frets = triple.positions.filter { $0.string == string }.map(\.fret)
+                #expect(RSOGTemplate.matchesSpacing(frets, pattern: RSOGSpacingPattern.tripleOffsets))
+            }
+        }
+    }
+    
+    @Test func spiralRunCoversEveryInKeyNoteOnEachString() {
+        let maxFret = 12
+        let run = BlockGenerator.spiralRun(for: .C, maxFret: maxFret)
+        let covered = Set(run.map(\.coordinateKey))
+        let diatonic = BlockGenerator.diatonicPattern(for: .C, maxFret: maxFret)
+        let missing = diatonic.filter { !covered.contains($0.coordinateKey) }
+        #expect(missing.isEmpty, "Skipped \(missing.map { "\($0.string),\($0.fret),\($0.note.rawValue)" })")
     }
     
     @Test func tiledBlocksCMajorHomePartialHeadBridgeTriple() {
@@ -353,10 +463,30 @@ struct RSOGTemplateTests {
         // BRIDGE: A–D transitional zone.
         #expect(bridge.positions.count == 6)
         #expect(Set(bridge.positions.map(\.string)) == [4, 5])
+        let bridgeNotes = bridge.positions.map(\.note.rawValue)
+        #expect(Set(bridgeNotes) == Set(["A", "B", "C", "D", "E", "F"]))
         
-        // TRIPLE: G–B–e with B-string shift preserved by the run.
-        #expect(triple.positions.count == 9)
-        #expect(Set(triple.positions.map(\.string)) == [1, 2, 3])
+        // TRIPLE: continuing 3NPS across G–B–e — G A B / C D E / F G A
+        // plus the helix wrap of that third row onto low E.
+        #expect(triple.positions.count == 12)
+        #expect(Set(triple.positions.map(\.string)) == [1, 2, 3, 6])
+        func notes(on string: Int) -> [String] {
+            triple.positions.filter { $0.string == string }.map(\.note.rawValue)
+        }
+        #expect(notes(on: 3) == ["G", "A", "B"])
+        #expect(notes(on: 2) == ["C", "D", "E"])
+        #expect(notes(on: 1) == ["F", "G", "A"])
+        #expect(notes(on: 6) == ["F", "G", "A"])
+        let tripleFrets = Dictionary(uniqueKeysWithValues:
+            [3, 2, 1, 6].map { string in
+                (string, triple.positions.filter { $0.string == string }.map(\.fret))
+            }
+        )
+        // G-string B is fret 4 (Bb at 3 is out of key); B/e rows sit on the shifted lattice.
+        #expect(tripleFrets[3] == [0, 2, 4])
+        #expect(tripleFrets[2] == [1, 3, 5])
+        #expect(tripleFrets[1] == [1, 3, 5])
+        #expect(tripleFrets[6] == [1, 3, 5])
     }
     
     @Test func spiralMappingUsesSameRunAsTiledBlocks() {
@@ -364,5 +494,83 @@ struct RSOGTemplateTests {
         let pattern = PatternGenerator.spiralMappingPattern(for: .G, maxFret: 12)
         #expect(pattern.positions.count == run.count)
         #expect(zip(pattern.positions, run).allSatisfy { $0.string == $1.string && $0.fret == $1.fret })
+    }
+    
+    @Test func tripleBlockOutlineSpansShiftAcrossGB() {
+        let blocks = BlockGenerator.tiledBlocks(for: .C, maxFret: 12)
+        guard let triple = blocks.first(where: { $0.type == .tripleBlock }) else {
+            Issue.record("Expected a home-position TRIPLE in C")
+            return
+        }
+        let spans = FretboardRenderer.blockOutlineSpans(for: triple.positions)
+        let byString = Dictionary(uniqueKeysWithValues: spans.map { ($0.string, $0) })
+        
+        // G (3) and B (2) must disagree on frets — that's the major-third shift.
+        guard let g = byString[3], let b = byString[2] else {
+            Issue.record("TRIPLE should span G and B")
+            return
+        }
+        #expect(g.minFret != b.minFret || g.maxFret != b.maxFret)
+        
+        // Aligned A–D BRIDGE stays rectangular (same frets both strings).
+        guard let bridge = blocks.first(where: { $0.type == .bridgeBlock }) else {
+            Issue.record("Expected a home-position BRIDGE in C")
+            return
+        }
+        let bridgeSpans = FretboardRenderer.blockOutlineSpans(for: bridge.positions)
+        #expect(bridgeSpans.count == 2)
+        #expect(bridgeSpans[0].minFret == bridgeSpans[1].minFret)
+        #expect(bridgeSpans[0].maxFret == bridgeSpans[1].maxFret)
+    }
+    
+    @Test func spiralRunAndTiledBlocksTransposeWithKey() {
+        let cRun = BlockGenerator.spiralRun(for: .C, maxFret: 12)
+        let gRun = BlockGenerator.spiralRun(for: .G, maxFret: 12)
+        let dRun = BlockGenerator.spiralRun(for: .D, maxFret: 12)
+        
+        #expect(cRun.first?.string == 6 && cRun.first?.fret == 0 && cRun.first?.note == .E)
+        // Same shape, shifted by root − C.
+        #expect(gRun.first?.string == 6 && gRun.first?.fret == 7 && gRun.first?.note == .B)
+        #expect(dRun.first?.string == 6 && dRun.first?.fret == 2 && dRun.first?.note == .FSharp)
+        
+        let cBlocks = BlockGenerator.tiledBlocks(for: .C, maxFret: 12)
+        let gBlocks = BlockGenerator.tiledBlocks(for: .G, maxFret: 15)
+        #expect(cBlocks.count >= 3 && gBlocks.count >= 3)
+        
+        let cTriple = cBlocks[2]
+        let gTriple = gBlocks[2]
+        #expect(cTriple.type == .tripleBlock && gTriple.type == .tripleBlock)
+        
+        // G major TRIPLE is C’s TRIPLE notes transposed +7 semitones (and frets +7).
+        func noteNames(_ block: Block, string: Int) -> [String] {
+            block.positions.filter { $0.string == string }.map(\.note.rawValue)
+        }
+        #expect(noteNames(cTriple, string: 3) == ["G", "A", "B"])
+        #expect(noteNames(cTriple, string: 2) == ["C", "D", "E"])
+        #expect(noteNames(cTriple, string: 1) == ["F", "G", "A"])
+        #expect(noteNames(cTriple, string: 6) == ["F", "G", "A"])
+        
+        #expect(noteNames(gTriple, string: 3) == ["D", "E", "F#"])
+        #expect(noteNames(gTriple, string: 2) == ["G", "A", "B"])
+        #expect(noteNames(gTriple, string: 1) == ["C", "D", "E"])
+        #expect(noteNames(gTriple, string: 6) == ["C", "D", "E"])
+        
+        let cFrets = cTriple.positions.filter { $0.string == 3 }.map(\.fret)
+        let gFrets = gTriple.positions.filter { $0.string == 3 }.map(\.fret)
+        #expect(cFrets == [0, 2, 4])
+        #expect(gFrets == [7, 9, 11])
+    }
+    
+    @Test func tiledBlocksAvailableAcrossReferenceKeys() {
+        for key in [Key.C, .CSharp, .D, .E, .F, .G, .A] {
+            let delta = ((key.rootNote.semitonesFromC % 12) + 12) % 12
+            let run = BlockGenerator.spiralRun(for: key, maxFret: 15)
+            #expect(run.first?.fret == delta, "Home start fret for \(key.rawValue)")
+            #expect(run.first.map { FretboardCalculator.scaleDegree(of: $0.note, in: key) } == 2)
+            
+            let blocks = BlockGenerator.tiledBlocks(for: key, maxFret: 15)
+            let types = blocks.prefix(3).map(\.type)
+            #expect(types == [.headBlock, .bridgeBlock, .tripleBlock], "Cycle in \(key.rawValue)")
+        }
     }
 }

@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rosetta Stone of Guitar — See the fretboard</title>
+  <meta name="description" content="Learn guitar by studying the visual pattern all the correct notes make on the fretboard. HEAD, BRIDGE, and TRIPLE milestones. Spiral Mapping, Jumping, and the chord family — in the iOS app.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,500&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0a09;
+      --bg-2: #141210;
+      --ink: #f4efe6;
+      --muted: #b7aea0;
+      --line: rgba(244, 239, 230, 0.12);
+      --head: #6ec8ff;
+      --bridge: #6ee6a0;
+      --triple: #f0a14a;
+      --accent: #f0a14a;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: Figtree, ui-sans-serif, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.55;
+    }
+
+    a { color: var(--head); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .wrap { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(16px);
+      background: rgba(11, 10, 9, 0.72);
+      border-bottom: 1px solid var(--line);
+    }
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      gap: 16px;
+    }
+    .mark {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--ink);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .mark:hover { text-decoration: none; }
+    .mark-bars {
+      width: 22px;
+      height: 22px;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 3px;
+    }
+    .mark-bars span { display: block; border-radius: 1px; }
+    .mark-bars span:nth-child(1) { background: var(--head); }
+    .mark-bars span:nth-child(2) { background: var(--bridge); }
+    .mark-bars span:nth-child(3) { background: var(--triple); }
+
+    nav a { color: var(--muted); font-size: 0.92rem; font-weight: 500; margin-left: 22px; }
+    nav a:hover { color: var(--ink); text-decoration: none; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 18px;
+      border-radius: 999px;
+      font-weight: 600;
+      border: 1px solid transparent;
+    }
+    .btn:hover { text-decoration: none; }
+    .btn-primary { background: var(--triple); color: #1a1208; }
+    .btn-ghost { border-color: var(--line); color: var(--ink); }
+
+    .hero {
+      position: relative;
+      padding: 72px 0 48px;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: -20% 20% auto -10%;
+      height: 520px;
+      background:
+        radial-gradient(circle at 20% 40%, rgba(110, 200, 255, 0.16), transparent 55%),
+        radial-gradient(circle at 70% 30%, rgba(240, 161, 74, 0.18), transparent 50%);
+      pointer-events: none;
+    }
+    .hero-grid {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 56px;
+      align-items: center;
+    }
+    .eyebrow {
+      color: var(--triple);
+      font-weight: 600;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-family: Fraunces, Georgia, serif;
+      font-size: clamp(2.4rem, 5vw, 4.4rem);
+      line-height: 1.05;
+      font-weight: 500;
+      margin: 0 0 18px;
+    }
+    h1 em { font-style: italic; color: var(--triple); }
+    .lede {
+      font-size: 1.15rem;
+      color: var(--muted);
+      max-width: 38rem;
+      margin-bottom: 28px;
+    }
+    .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+    .milestones {
+      display: flex;
+      gap: 18px;
+      margin-top: 32px;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 8px; }
+    .dot.head { background: var(--head); }
+    .dot.bridge { background: var(--bridge); }
+    .dot.triple { background: var(--triple); }
+
+    .phone {
+      width: min(340px, 100%);
+      margin: 0 auto;
+      background: #1b1a18;
+      border: 8px solid #2a2723;
+      border-radius: 36px;
+      overflow: hidden;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+    }
+    .phone img, .phone video {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    section { padding: 72px 0; }
+    h2 {
+      font-family: Fraunces, Georgia, serif;
+      font-size: clamp(1.8rem, 3vw, 2.6rem);
+      font-weight: 500;
+      margin: 0 0 12px;
+    }
+    .section-kicker { color: var(--muted); max-width: 40rem; margin-bottom: 36px; }
+
+    .video-stage {
+      background: var(--bg-2);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      padding: 28px;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 36px;
+      align-items: center;
+    }
+    .video-copy h2 { margin-bottom: 10px; }
+
+    .shots {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+    .shot {
+      margin: 0;
+      background: var(--bg-2);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      overflow: hidden;
+    }
+    .shot img { width: 100%; display: block; }
+    .shot figcaption {
+      padding: 12px 14px 16px;
+      font-size: 0.86rem;
+      color: var(--muted);
+    }
+
+    .concepts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .card {
+      background: var(--bg-2);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 22px;
+    }
+    .card h3 { margin: 0 0 8px; font-size: 1.15rem; }
+    .card p { margin: 0; color: var(--muted); }
+
+    .blocks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .block-name { font-weight: 700; letter-spacing: 0.08em; }
+
+    .quote {
+      font-family: Fraunces, Georgia, serif;
+      font-size: clamp(1.4rem, 2.4vw, 2rem);
+      font-weight: 500;
+      font-style: italic;
+      line-height: 1.35;
+      max-width: 46rem;
+    }
+    .quote-src { color: var(--muted); margin-top: 12px; }
+
+    footer {
+      border-top: 1px solid var(--line);
+      padding: 28px 0 48px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 900px) {
+      .hero-grid, .video-stage, .shots, .concepts, .blocks { grid-template-columns: 1fr; }
+      .shots { grid-template-columns: 1fr 1fr; }
+      nav { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap nav">
+      <a class="mark" href="#top">
+        <span class="mark-bars" aria-hidden="true"><span></span><span></span><span></span></span>
+        rSoGuitar
+      </a>
+      <nav>
+        <a href="#walkthrough">Walkthrough</a>
+        <a href="#screens">App</a>
+        <a href="#method">Method</a>
+        <a href="https://www.rsoguitar.com/rsoguitar/">The book</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div>
+          <p class="eyebrow">The Rosetta Stone of Guitar</p>
+          <h1>Learn to play by <em>seeing</em> the pattern on the fretboard.</h1>
+          <p class="lede">Traditional theory studies the staff. This method studies where your eyes already look: the neck. One repeating diatonic geography. Three milestones. Four ways to move.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#walkthrough">Watch it walk the neck</a>
+            <a class="btn btn-ghost" href="https://www.rsoguitar.com/rsoguitar/">Read the method</a>
+          </div>
+          <div class="milestones">
+            <span><i class="dot head"></i>HEAD</span>
+            <span><i class="dot bridge"></i>BRIDGE</span>
+            <span><i class="dot triple"></i>TRIPLE</span>
+          </div>
+        </div>
+        <div class="phone">
+          <img src="media/06-fretboard-playing.png" alt="Fretboard Explorer walking a C major spiral, with HEAD, BRIDGE, and TRIPLE blocks on the neck">
+        </div>
+      </div>
+    </section>
+
+    <section id="walkthrough">
+      <div class="wrap video-stage">
+        <div class="phone">
+          <video controls playsinline poster="media/06-fretboard-playing.png">
+            <source src="media/spiral-walk.mp4" type="video/mp4">
+          </video>
+        </div>
+        <div class="video-copy">
+          <p class="eyebrow">Captured from the iOS simulator</p>
+          <h2>The spiral is a walk, not a diagram you memorize.</h2>
+          <p class="section-kicker">Press play in Fretboard Explorer and the pattern steps note by note: three notes per string, low E to high E, then the wrap back onto low E. The HEAD → BRIDGE → TRIPLE cycle moves with you.</p>
+          <p class="section-kicker">Same shape in every key. Only the place on the neck changes.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="screens">
+      <div class="wrap">
+        <h2>The app, as it actually looks</h2>
+        <p class="section-kicker">Screenshots from the current iOS build: lessons, the Spiral Mapping lesson, Fretboard Explorer, Concepts, and the metronome.</p>
+        <div class="shots">
+          <figure class="shot">
+            <img src="media/01-lessons.png" alt="Lessons tab with free Spiral Mapping and Jumping lessons">
+            <figcaption>Lessons — guided path through the method</figcaption>
+          </figure>
+          <figure class="shot">
+            <img src="media/02-spiral-lesson.png" alt="Spiral Mapping lesson with key picker">
+            <figcaption>Spiral Mapping — change key, keep the shape</figcaption>
+          </figure>
+          <figure class="shot">
+            <img src="media/03-fretboard.png" alt="Fretboard Explorer overview with HEAD BRIDGE TRIPLE overlays">
+            <figcaption>Explorer — HEAD, BRIDGE, TRIPLE on the neck</figcaption>
+          </figure>
+          <figure class="shot">
+            <img src="media/04-concepts.png" alt="Concepts screen listing Spiral Mapping, Jumping, Family of Chords, Familial Hierarchy">
+            <figcaption>Concepts — the four ways to move</figcaption>
+          </figure>
+          <figure class="shot">
+            <img src="media/05-rhythm.png" alt="Rhythm metronome at 80 BPM in 4/4">
+            <figcaption>Rhythm — metronome, play-along, tutorials</figcaption>
+          </figure>
+          <figure class="shot">
+            <img src="media/06-fretboard-playing.png" alt="Spiral walk in progress on the fretboard">
+            <figcaption>Step player — note 16 of the spiral</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section id="method">
+      <div class="wrap">
+        <h2>Four concepts. One pattern.</h2>
+        <p class="section-kicker">From the original rSoGuitar method by Frederic Pool — now interactive on the phone.</p>
+        <div class="concepts">
+          <article class="card">
+            <h3>Spiral Mapping</h3>
+            <p>Navigate the naturally occurring pattern vertically across the fretboard, spiraling from one end of the neck to the other, leaving no in-key note unmapped.</p>
+          </article>
+          <article class="card">
+            <h3>Jumping</h3>
+            <p>Simple rules that let you move freely in the horizontal direction without hitting a bad note or getting lost.</p>
+          </article>
+          <article class="card">
+            <h3>Family of Chords</h3>
+            <p>See how Papa, Mama, and oBro (I, IV, V) sit across the fretboard in the horizontal direction.</p>
+          </article>
+          <article class="card">
+            <h3>Familial Hierarchy</h3>
+            <p>Learn the relative positions of all the naturally occurring chords in the vertical direction — Papa through ySis.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>Read the milestones.</h2>
+        <p class="section-kicker">Once you can see HEAD, BRIDGE, and TRIPLE, you know where the entire pattern sits — two blocks from the bank, not longitude and latitude.</p>
+        <div class="blocks">
+          <article class="card">
+            <p class="block-name" style="color:var(--head)">HEAD</p>
+            <p>XX-X. The entry landmark. In home position you often see the partial on low E.</p>
+          </article>
+          <article class="card">
+            <p class="block-name" style="color:var(--bridge)">BRIDGE</p>
+            <p>X-XX. The transitional zone on A and D — where position shifts start to feel natural.</p>
+          </article>
+          <article class="card">
+            <p class="block-name" style="color:var(--triple)">TRIPLE</p>
+            <p>X-X-X. Three strings, every other half-step. The third row wraps onto low E. That wrap is the helix.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <p class="quote">“Suddenly the fretboard was deciphered. It all made sense. It was like someone had given me, well, a Rosetta Stone of Guitar.”</p>
+        <p class="quote-src">Guitar Noise review of the original method</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap" style="text-align:center;">
+        <h2>Ready for the breakthrough?</h2>
+        <p class="section-kicker" style="margin-left:auto; margin-right:auto;">The book is ~30 pages. The app is the same geography, playable. If it works for you, you may be a little angry nobody showed it this way sooner.</p>
+        <div class="hero-actions" style="justify-content:center;">
+          <a class="btn btn-primary" href="https://www.rsoguitar.com/rsoguitar/">Study at rsoguitar.com</a>
+          <a class="btn btn-ghost" href="#screens">See the iOS app</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="wrap">
+    <footer>
+      <span>Rosetta Stone of Guitar · method by Frederic Pool</span>
+      <span>App screenshots and video captured from the iOS simulator</span>
+    </footer>
+  </div>
+</body>
+</html>

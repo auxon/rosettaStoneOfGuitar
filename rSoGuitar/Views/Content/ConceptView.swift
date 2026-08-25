@@ -55,6 +55,7 @@ struct ConceptView: View {
                         initialShowBlocks: true,
                         initialBlockTypes: demoBlocks
                     )
+                    .id(pattern.id)
                     .frame(minHeight: 380)
                 } else {
                     ProgressView()

@@ -251,7 +251,7 @@ enum FretboardRenderer {
             let visiblePositions = block.positions.filter { $0.fret <= layout.maxFret }
             guard !visiblePositions.isEmpty else { continue }
             
-            let outlineRect = blockOutlineRect(
+            let outline = blockOutline(
                 layout: layout,
                 positions: visiblePositions,
                 offset: offset
@@ -260,7 +260,7 @@ enum FretboardRenderer {
             if showOutlines {
                 drawBlockOutline(
                     context: &context,
-                    rect: outlineRect,
+                    path: outline.path,
                     color: color,
                     lineWidth: block.type == .tripleBlock ? 2.0 : 2.0,
                     fillOpacity: block.type == .tripleBlock ? 0.04 : 0.07
@@ -279,7 +279,7 @@ enum FretboardRenderer {
                     context: &context,
                     layout: layout,
                     block: block,
-                    outlineRect: outlineRect,
+                    outlineRect: outline.bounds,
                     color: color,
                     occupiedRects: &occupiedLabelRects
                 )
@@ -287,43 +287,152 @@ enum FretboardRenderer {
         }
     }
     
-    /// Tight padded bounds around the block's visible note positions.
-    private static func blockOutlineRect(
+    /// Per-string fret span used to build non-rectangular block outlines.
+    /// When frets align across strings the outline is a rectangle; when a block
+    /// crosses the G–B major-third shift the envelope stair-steps.
+    struct BlockOutlineSpan: Equatable {
+        let string: Int
+        let minFret: Int
+        let maxFret: Int
+    }
+    
+    /// Collapse note positions into one min/max fret span per string (high E → low E).
+    static func blockOutlineSpans(for positions: [FretboardPosition]) -> [BlockOutlineSpan] {
+        var byString: [Int: (minFret: Int, maxFret: Int)] = [:]
+        for position in positions {
+            if let existing = byString[position.string] {
+                byString[position.string] = (
+                    min(existing.minFret, position.fret),
+                    max(existing.maxFret, position.fret)
+                )
+            } else {
+                byString[position.string] = (position.fret, position.fret)
+            }
+        }
+        return byString.keys.sorted().map { string in
+            let span = byString[string]!
+            return BlockOutlineSpan(string: string, minFret: span.minFret, maxFret: span.maxFret)
+        }
+    }
+    
+    /// Envelope path hugging each string's fret range (with padding).
+    /// Stair-steps at string midlines wherever adjacent spans disagree — the
+    /// visible signature of the G–B tuning shift on TRIPLE (and any other
+    /// block that crosses strings 3→2).
+    ///
+    /// Non-adjacent strings (a wrapped TRIPLE on G–B–e plus the low-E unison
+    /// row) get separate envelopes so the wrap does not fill the whole neck.
+    private static func blockOutline(
         layout: FretboardLayout,
         positions: [FretboardPosition],
         offset: CGSize,
         padding: CGFloat = 10
-    ) -> CGRect {
-        let points = positions.map { layout.point(for: $0, offset: offset) }
-        guard let minX = points.map(\.x).min(),
-              let maxX = points.map(\.x).max(),
-              let minY = points.map(\.y).min(),
-              let maxY = points.map(\.y).max() else {
-            return .zero
+    ) -> (path: Path, bounds: CGRect) {
+        let groups = contiguousSpanGroups(blockOutlineSpans(for: positions))
+        guard !groups.isEmpty else { return (Path(), .zero) }
+        
+        var path = Path()
+        var bounds: CGRect = .null
+        for group in groups {
+            let piece = outlinePath(for: group, layout: layout, offset: offset, padding: padding)
+            path.addPath(piece)
+            bounds = bounds.union(piece.boundingRect)
         }
-        // Expand toward fret/string cell edges so the outline reads as a zone.
+        return (path, bounds)
+    }
+    
+    /// Adjacent physical strings stay one polygon; a helix wrap onto low E is its own band.
+    private static func contiguousSpanGroups(_ spans: [BlockOutlineSpan]) -> [[BlockOutlineSpan]] {
+        guard !spans.isEmpty else { return [] }
+        var groups: [[BlockOutlineSpan]] = [[spans[0]]]
+        for span in spans.dropFirst() {
+            if let last = groups[groups.count - 1].last, span.string == last.string + 1 {
+                groups[groups.count - 1].append(span)
+            } else {
+                groups.append([span])
+            }
+        }
+        return groups
+    }
+    
+    private static func outlinePath(
+        for spans: [BlockOutlineSpan],
+        layout: FretboardLayout,
+        offset: CGSize,
+        padding: CGFloat
+    ) -> Path {
+        guard !spans.isEmpty else { return Path() }
+        
         let padX = max(padding, layout.fretWidth * 0.35)
-        let padY = max(padding, layout.stringSpacing * 0.4)
-        return CGRect(
-            x: minX - padX,
-            y: minY - padY,
-            width: (maxX - minX) + padX * 2,
-            height: (maxY - minY) + padY * 2
-        )
+        let padY = max(padding * 0.55, layout.stringSpacing * 0.38)
+        
+        func leftX(_ span: BlockOutlineSpan) -> CGFloat {
+            layout.fretCenterX(span.minFret) - padX + offset.width
+        }
+        func rightX(_ span: BlockOutlineSpan) -> CGFloat {
+            layout.fretCenterX(span.maxFret) + padX + offset.width
+        }
+        func stringCenterY(_ string: Int) -> CGFloat {
+            layout.stringY(string) + offset.height
+        }
+        func topY(_ span: BlockOutlineSpan) -> CGFloat {
+            stringCenterY(span.string) - padY
+        }
+        func bottomY(_ span: BlockOutlineSpan) -> CGFloat {
+            stringCenterY(span.string) + padY
+        }
+        func midY(_ a: BlockOutlineSpan, _ b: BlockOutlineSpan) -> CGFloat {
+            (stringCenterY(a.string) + stringCenterY(b.string)) / 2
+        }
+        
+        var path = Path()
+        let first = spans[0]
+        path.move(to: CGPoint(x: leftX(first), y: topY(first)))
+        
+        for i in 0..<spans.count {
+            let span = spans[i]
+            if i + 1 < spans.count {
+                let next = spans[i + 1]
+                let y = midY(span, next)
+                path.addLine(to: CGPoint(x: leftX(span), y: y))
+                path.addLine(to: CGPoint(x: leftX(next), y: y))
+            } else {
+                path.addLine(to: CGPoint(x: leftX(span), y: bottomY(span)))
+            }
+        }
+        
+        for i in stride(from: spans.count - 1, through: 0, by: -1) {
+            let span = spans[i]
+            if i == spans.count - 1 {
+                path.addLine(to: CGPoint(x: rightX(span), y: bottomY(span)))
+            }
+            if i > 0 {
+                let above = spans[i - 1]
+                let y = midY(above, span)
+                path.addLine(to: CGPoint(x: rightX(span), y: y))
+                path.addLine(to: CGPoint(x: rightX(above), y: y))
+            } else {
+                path.addLine(to: CGPoint(x: rightX(span), y: topY(span)))
+            }
+        }
+        path.closeSubpath()
+        return path
     }
     
     private static func drawBlockOutline(
         context: inout GraphicsContext,
-        rect: CGRect,
+        path: Path,
         color: Color,
         lineWidth: CGFloat,
         fillOpacity: Double = 0.07
     ) {
-        var path = Path()
-        path.addRoundedRect(in: rect, cornerSize: CGSize(width: 8, height: 8))
         // Very light wash so overlapping zones (BRIDGE ∩ TRIPLE) stay transparent.
         context.fill(path, with: .color(color.opacity(fillOpacity)))
-        context.stroke(path, with: .color(color.opacity(0.95)), lineWidth: lineWidth)
+        context.stroke(
+            path,
+            with: .color(color.opacity(0.95)),
+            style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
+        )
     }
     
     private static func drawBlockOutlineLabel(
@@ -462,7 +571,7 @@ enum FretboardRenderer {
             let visible = voicing.positions.filter { $0.fret <= layout.maxFret }
             guard visible.count >= 2 else { continue }
             
-            let outlineRect = blockOutlineRect(
+            let outline = blockOutline(
                 layout: layout,
                 positions: visible,
                 offset: .zero,
@@ -470,7 +579,7 @@ enum FretboardRenderer {
             )
             drawBlockOutline(
                 context: &context,
-                rect: outlineRect,
+                path: outline.path,
                 color: color,
                 lineWidth: 2.0,
                 fillOpacity: 0.08
@@ -494,7 +603,7 @@ enum FretboardRenderer {
                     context: &context,
                     layout: layout,
                     group: group,
-                    outlineRect: outlineRect,
+                    outlineRect: outline.bounds,
                     color: color,
                     occupiedRects: &occupiedLabelRects
                 )
@@ -622,12 +731,14 @@ enum FretboardRenderer {
         let activePositions = active.positions.filter { $0.fret <= layout.maxFret }
         guard !activePositions.isEmpty else { return }
 
-        // Soft zone outline around multi-note (voicing) steps.
+        // Soft zone outline around multi-note (voicing) steps — follows G–B shift.
         if active.positions.count > 1 {
-            let outlineRect = blockOutlineRect(layout: layout, positions: activePositions, offset: .zero, padding: 9)
-            var zone = Path()
-            zone.addRoundedRect(in: outlineRect, cornerSize: CGSize(width: 10, height: 10))
-            context.stroke(zone, with: .color(active.accentColor.opacity(0.85)), lineWidth: 2)
+            let outline = blockOutline(layout: layout, positions: activePositions, offset: .zero, padding: 9)
+            context.stroke(
+                outline.path,
+                with: .color(active.accentColor.opacity(0.85)),
+                style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+            )
         }
 
         // Steady highlight ring.

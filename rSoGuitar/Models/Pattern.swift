@@ -255,6 +255,10 @@ struct Block: Identifiable {
     let anchorFret: Int
     /// Index in the HEAD → BRIDGE → TRIPLE repeating sequence (0-based).
     let sequenceIndex: Int
+    /// Inclusive start index in `spiralRun` covered by this tiled block.
+    let runStart: Int
+    /// Exclusive end index in `spiralRun` covered by this tiled block.
+    let runEnd: Int
     
     init(
         id: UUID = UUID(),
@@ -265,7 +269,9 @@ struct Block: Identifiable {
         stringRange: ClosedRange<Int>,
         positions: [FretboardPosition],
         anchorFret: Int? = nil,
-        sequenceIndex: Int = 0
+        sequenceIndex: Int = 0,
+        runStart: Int = 0,
+        runEnd: Int = 0
     ) {
         self.id = id
         self.type = type
@@ -276,5 +282,11 @@ struct Block: Identifiable {
         self.positions = positions
         self.anchorFret = anchorFret ?? fretRange.lowerBound
         self.sequenceIndex = sequenceIndex
+        self.runStart = runStart
+        self.runEnd = runEnd
+    }
+    
+    func coversRunIndex(_ index: Int) -> Bool {
+        runEnd > runStart && index >= runStart && index < runEnd
     }
 }

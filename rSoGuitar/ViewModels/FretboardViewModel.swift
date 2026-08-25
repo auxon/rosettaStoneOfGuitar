@@ -221,8 +221,8 @@ class FretboardViewModel: ObservableObject {
     }
     
     func updateBlocks() {
-        // Canonical rSoG sequence: HEAD → BRIDGE → TRIPLE (startBlockType rotates the order)
-        blocks = BlockGenerator.allBlocks(for: selectedKey, maxFret: maxFret, startBlockType: .headBlock)
+        // Full helix tiling (not just the first HEAD–BRIDGE–TRIPLE cycle).
+        blocks = BlockGenerator.tiledBlocks(for: selectedKey, maxFret: maxFret)
     }
     
     func updateDiatonicPattern() {
@@ -370,7 +370,9 @@ class FretboardViewModel: ObservableObject {
                 stringRange: rebuilt.stringRange,
                 positions: rebuilt.positions,
                 anchorFret: rebuilt.anchorFret,
-                sequenceIndex: oldBlock.sequenceIndex
+                sequenceIndex: oldBlock.sequenceIndex,
+                runStart: oldBlock.runStart,
+                runEnd: oldBlock.runEnd
             )
         }
         

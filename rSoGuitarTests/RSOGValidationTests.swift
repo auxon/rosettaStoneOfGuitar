@@ -206,6 +206,38 @@ struct RSOGValidationTests {
         #expect(vm.blocks.flatMap(\.positions).allSatisfy { gNotes.contains($0.note) })
     }
     
+    @Test func regeneratingLessonPatternMovesWithKey() {
+        let service = ContentService.shared
+        let c = service.generatePattern(type: .spiralMapping, key: .C)
+        let g = service.pattern(c, in: .G)
+        #expect(g.key == .G)
+        #expect(g.type == .spiralMapping)
+        #expect(g.positions.first?.fret == (c.positions.first?.fret ?? 0) + 7)
+        #expect(service.pattern(c, in: .C).id == c.id)
+        
+        let jumpC = service.generatePattern(
+            type: .jumping,
+            key: .C,
+            startPosition: FretboardPosition(string: 3, fret: 0, note: .D)
+        )
+        let jumpG = service.pattern(jumpC, in: .G)
+        #expect(jumpG.positions.first?.string == 3)
+        #expect(jumpG.positions.first?.fret == 7)
+    }
+    
+    @Test @MainActor func patternPlayerBuildsOneStepPerSpiralNote() {
+        let player = PatternPlayer()
+        let pattern = ContentService.shared.generatePattern(type: .spiralMapping, key: .C)
+        player.load(pattern)
+        #expect(player.steps.count == pattern.positions.count)
+        #expect(player.clampedStep == -1)
+        player.seek(0)
+        #expect(player.clampedStep == 0)
+        player.setDisplayMode(.full)
+        #expect(player.displayMode == .full)
+        #expect(!player.isPlaying)
+    }
+    
     @Test func identifyRebuildsPreserveBlockTypeAcrossDragAnchors() {
         let maxFret = 12
         let cases: [(BlockType, FretboardPosition)] = [
@@ -267,7 +299,7 @@ struct RSOGValidationTests {
     }
     
     @Test func lessonDemoBlockPresetsMatchConceptTeaching() {
-        #expect(RSOGConceptInfo.demoBlocks(for: .spiralMapping) == [.headBlock])
+        #expect(RSOGConceptInfo.demoBlocks(for: .spiralMapping) == [.headBlock, .bridgeBlock, .tripleBlock])
         #expect(RSOGConceptInfo.demoBlocks(for: .jumping) == [.bridgeBlock])
         #expect(RSOGConceptInfo.demoBlocks(for: .familyOfChords).contains(.tripleBlock))
         #expect(RSOGConceptInfo.demoBlocks(for: .familialHierarchy) == [.tripleBlock])

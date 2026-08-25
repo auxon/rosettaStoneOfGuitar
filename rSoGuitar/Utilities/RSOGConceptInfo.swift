@@ -93,7 +93,7 @@ enum RSOGConceptInfo {
         switch type {
         case .headBlock: return "3 notes/string · low-E pair (often partial)"
         case .bridgeBlock: return "3 notes/string · A–D transitional zone"
-        case .tripleBlock: return "3 notes/string · G–B–e (shifts at G–B)"
+        case .tripleBlock: return "3 notes/string · G–B–e, wraps onto low E"
         }
     }
     
@@ -104,7 +104,7 @@ enum RSOGConceptInfo {
         case .bridgeBlock:
             return "The BRIDGE block is a 6-note milestone — 3 notes per string on the A and D strings. It is the transitional zone between HEAD and TRIPLE and supports horizontal jumping and position shifts."
         case .tripleBlock:
-            return "The TRIPLE block is a 9-note milestone — 3 notes per string across G, B, and high E. The B-string row shifts one fret at the G–B major-third crossing; that shift is part of the pattern, not a mistake."
+            return "The TRIPLE block is a 9-note milestone — 3 notes per string across G, B, and high E. Its third row wraps onto the low E string at the same frets (the helix). The B-string row shifts one fret at the G–B major-third crossing; that shift is part of the pattern, not a mistake."
         }
     }
     

@@ -9,6 +9,7 @@ import SwiftUI
 
 struct FretboardView: View {
     @StateObject private var viewModel = FretboardViewModel()
+    @StateObject private var player = PatternPlayer()
     @State private var fretWidth: CGFloat = 40
     @State private var stringSpacing: CGFloat = 30
     @State private var showAdvancedControls = false
@@ -29,12 +30,64 @@ struct FretboardView: View {
                     .padding(.top, 26)
                     .padding([.horizontal, .bottom])
             }
+            
+            if showsPatternPlayer {
+                VStack(spacing: 8) {
+                    PatternDisplayModePicker(player: player)
+                        .padding(.horizontal)
+                    if player.isStepMode {
+                        PatternPlayerPanel(player: player, blockCaption: blockCaption)
+                    }
+                }
+                .padding(.bottom, 8)
+                .background(Color(.systemGray6))
+            }
         }
         .navigationTitle("Fretboard Explorer")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $viewModel.inspectedBlock) { block in
             BlockDetailSheet(block: block)
         }
+        .onAppear {
+            player.load(viewModel.selectedPattern)
+            if ProcessInfo.processInfo.arguments.contains("-rsogAutoPlay") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                    player.setDisplayMode(.step)
+                    if !player.isPlaying {
+                        player.playPause()
+                    }
+                }
+            }
+        }
+        .onChange(of: viewModel.selectedPattern?.id) { _, _ in
+            player.load(viewModel.selectedPattern)
+        }
+        .onChange(of: viewModel.showInfiniteBassPattern) { _, enabled in
+            if enabled { player.stop() }
+        }
+        .onDisappear {
+            player.stop()
+        }
+    }
+    
+    private var showsPatternPlayer: Bool {
+        viewModel.selectedPattern != nil && !viewModel.showInfiniteBassPattern
+    }
+    
+    private var blockCaption: String {
+        guard viewModel.showBlocks, !displayedBlocks.isEmpty else { return "" }
+        return displayedBlocks.map { RSOGConceptInfo.blockTitle($0.type) }.joined(separator: " · ")
+    }
+    
+    private var displayedBlocks: [Block] {
+        if player.displayMode == .step, viewModel.selectedPattern != nil, !player.steps.isEmpty {
+            return BlockGenerator.visibleTiledBlocks(
+                for: viewModel.selectedKey,
+                maxFret: viewModel.maxFret,
+                atRunIndex: max(0, player.clampedStep)
+            )
+        }
+        return viewModel.blocks
     }
     
     private var canvasMinWidth: CGFloat {
@@ -352,9 +405,18 @@ struct FretboardView: View {
     private var fretboardCanvas: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
-                // Main fretboard canvas
-                Canvas { context, size in
-                    drawFretboard(context: context, size: size)
+                TimelineView(
+                    .animation(
+                        minimumInterval: 1.0 / 24.0,
+                        paused: !(player.displayMode == .step && player.isPlaying)
+                    )
+                ) { timeline in
+                    Canvas { context, size in
+                        let cycle = 1.2
+                        let phase = timeline.date.timeIntervalSinceReferenceDate
+                            .truncatingRemainder(dividingBy: cycle) / cycle
+                        drawFretboard(context: context, size: size, pulsePhase: phase)
+                    }
                 }
                 .gesture(
                     DragGesture(minimumDistance: 5)
@@ -411,7 +473,7 @@ struct FretboardView: View {
         }
     }
     
-    private func drawFretboard(context: GraphicsContext, size: CGSize) {
+    private func drawFretboard(context: GraphicsContext, size: CGSize, pulsePhase: Double) {
         var context = context
         
         let layout: FretboardLayout
@@ -462,19 +524,19 @@ struct FretboardView: View {
             }
             
             var offsets: [UUID: CGSize] = [:]
-            for block in viewModel.blocks {
+            for block in displayedBlocks {
                 offsets[block.id] = viewModel.getBlockOffset(block.id)
             }
             FretboardRenderer.drawBlocks(
                 context: &context,
                 layout: layout,
-                blocks: viewModel.blocks,
+                blocks: displayedBlocks,
                 selectedTypes: viewModel.selectedBlockTypes,
                 offsets: offsets,
                 showOutlines: true,
                 showNotePips: true,
                 showLabels: true,
-                preferPrimaryPlacements: true
+                preferPrimaryPlacements: false
             )
         }
         
@@ -486,7 +548,16 @@ struct FretboardView: View {
             drawModeShape(context: context, size: size, layout: layout)
         }
         
-        if viewModel.showPatternOverlay, let pattern = viewModel.selectedPattern {
+        if viewModel.showPatternOverlay, let pattern = viewModel.selectedPattern, player.displayMode == .step {
+            FretboardRenderer.drawPatternPlayer(
+                context: &context,
+                layout: layout,
+                pattern: pattern,
+                steps: player.steps,
+                currentStep: player.clampedStep,
+                pulsePhase: pulsePhase
+            )
+        } else if viewModel.showPatternOverlay, let pattern = viewModel.selectedPattern {
             FretboardRenderer.drawPattern(context: &context, layout: layout, pattern: pattern)
         } else if viewModel.showPatternOverlay {
             // Fallback: highlighted positions without a full Pattern model
@@ -506,7 +577,7 @@ struct FretboardView: View {
         
         let suppressed = (viewModel.showBlocks && !viewModel.selectedBlockTypes.isEmpty)
             ? FretboardRenderer.blockCoordinateKeys(
-                blocks: viewModel.blocks,
+                blocks: displayedBlocks,
                 selectedTypes: viewModel.selectedBlockTypes
             )
             : []
@@ -649,6 +720,16 @@ struct FretboardView: View {
             )
         }
         
+        // In step mode, tapping a pattern note jumps the scrubber.
+        if player.displayMode == .step, !player.steps.isEmpty,
+           let hit = layout.hitTest(at: location) {
+            let probe = FretboardPosition(string: hit.string, fret: hit.fret, note: .C)
+            if let index = PatternSequencer.stepIndex(at: probe, in: player.steps) {
+                player.seek(index)
+                return
+            }
+        }
+        
         // Prefer inspecting a block when the tap lands on a block note.
         if viewModel.showBlocks && !viewModel.showInfiniteBassPattern,
            let block = blockAt(location: location, layout: layout) {
@@ -665,7 +746,7 @@ struct FretboardView: View {
         let hitRadius: CGFloat = 14
         var best: (block: Block, distance: CGFloat)?
         
-        for block in viewModel.blocks {
+        for block in displayedBlocks {
             guard viewModel.selectedBlockTypes.contains(block.type) else { continue }
             let offset = viewModel.getBlockOffset(block.id)
             for position in block.positions {
@@ -692,7 +773,7 @@ struct FretboardView: View {
         
         if viewModel.draggedBlockId == nil {
             let hitRadius: CGFloat = 13
-            for block in viewModel.blocks {
+            for block in displayedBlocks {
                 guard viewModel.selectedBlockTypes.contains(block.type) else { continue }
                 for position in block.positions {
                     let p = layout.point(for: position)
