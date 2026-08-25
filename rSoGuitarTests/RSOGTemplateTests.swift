@@ -313,4 +313,56 @@ struct RSOGTemplateTests {
         #expect(block?.positions.count == 6)
         #expect(block?.anchorFret == 0)
     }
+    
+    // MARK: - Spiral-run tiled blocks (home-position geometry)
+    
+    @Test func spiralRunWrapsHighEToLowE() {
+        let run = BlockGenerator.spiralRun(for: .C, maxFret: 12)
+        #expect(!run.isEmpty)
+        #expect(run.count % 3 == 0)
+        
+        // First pass: strings 6→1, three notes each.
+        let firstPass = Array(run.prefix(18))
+        #expect(firstPass.map(\.string) == [6,6,6, 5,5,5, 4,4,4, 3,3,3, 2,2,2, 1,1,1])
+        
+        // Helix wrap: after high E, next note is back on low E (not bouncing).
+        if run.count > 18 {
+            #expect(run[18].string == 6)
+            #expect(run[17].string == 1)
+        }
+    }
+    
+    @Test func tiledBlocksCMajorHomePartialHeadBridgeTriple() {
+        let blocks = BlockGenerator.tiledBlocks(for: .C, maxFret: 12)
+        #expect(blocks.count >= 3)
+        
+        let head = blocks[0]
+        let bridge = blocks[1]
+        let triple = blocks[2]
+        
+        #expect(head.type == .headBlock)
+        #expect(bridge.type == .bridgeBlock)
+        #expect(triple.type == .tripleBlock)
+        
+        // Partial home HEAD: only the low-E XX-X pair (virtual string-7 notes dropped).
+        #expect(head.positions.count == 3)
+        #expect(Set(head.positions.map(\.string)) == [6])
+        let headKeys = Set(head.positions.map { "\($0.string),\($0.fret)" })
+        #expect(headKeys == ["6,0", "6,1", "6,3"])
+        
+        // BRIDGE: A–D transitional zone.
+        #expect(bridge.positions.count == 6)
+        #expect(Set(bridge.positions.map(\.string)) == [4, 5])
+        
+        // TRIPLE: G–B–e with B-string shift preserved by the run.
+        #expect(triple.positions.count == 9)
+        #expect(Set(triple.positions.map(\.string)) == [1, 2, 3])
+    }
+    
+    @Test func spiralMappingUsesSameRunAsTiledBlocks() {
+        let run = BlockGenerator.spiralRun(for: .G, maxFret: 12)
+        let pattern = PatternGenerator.spiralMappingPattern(for: .G, maxFret: 12)
+        #expect(pattern.positions.count == run.count)
+        #expect(zip(pattern.positions, run).allSatisfy { $0.string == $1.string && $0.fret == $1.fret })
+    }
 }

@@ -571,6 +571,126 @@ enum FretboardRenderer {
         }
     }
     
+    // MARK: Step player (progressive, decluttered)
+
+    /// Progressive render for the step-through player:
+    /// - upcoming notes as faint ghost dots (destination preview without clutter)
+    /// - one continuous "thread" path through the revealed walk order
+    /// - solid accent-colored circles for revealed notes
+    /// - pulsing ring + note label on the active step
+    static func drawPatternPlayer(
+        context: inout GraphicsContext,
+        layout: FretboardLayout,
+        pattern: Pattern,
+        steps: [PatternStep],
+        currentStep: Int,
+        pulsePhase: Double,
+        showGhosts: Bool = true,
+        showPath: Bool = true
+    ) {
+        let clampedStep = min(max(currentStep, -1), steps.count - 1)
+        let revealed = PatternSequencer.revealedPositions(steps: steps, through: clampedStep)
+        let revealedKeys = Set(revealed.map(\.coordinateKey))
+
+        if showGhosts {
+            for position in pattern.positions
+            where !revealedKeys.contains(position.coordinateKey) && position.fret <= layout.maxFret {
+                strokeCircle(
+                    context: &context,
+                    center: layout.point(for: position),
+                    radius: 3,
+                    color: Color.secondary.opacity(0.28),
+                    lineWidth: 1
+                )
+            }
+        }
+
+        if showPath, revealed.count >= 2 {
+            drawThreadPath(context: &context, layout: layout, waypoints: revealed)
+        }
+
+        for position in revealed where position.fret <= layout.maxFret {
+            let p = layout.point(for: position)
+            let color = noteAccent(for: position)
+            let radius: CGFloat = position.isRoot ? 10 : 7.5
+            fillCircle(context: &context, center: p, radius: radius, color: color.opacity(0.92))
+            strokeCircle(context: &context, center: p, radius: radius, color: .white.opacity(0.9), lineWidth: 1.2)
+        }
+
+        guard clampedStep >= 0, clampedStep < steps.count else { return }
+        let active = steps[clampedStep]
+        let activePositions = active.positions.filter { $0.fret <= layout.maxFret }
+        guard !activePositions.isEmpty else { return }
+
+        // Soft zone outline around multi-note (voicing) steps.
+        if active.positions.count > 1 {
+            let outlineRect = blockOutlineRect(layout: layout, positions: activePositions, offset: .zero, padding: 9)
+            var zone = Path()
+            zone.addRoundedRect(in: outlineRect, cornerSize: CGSize(width: 10, height: 10))
+            context.stroke(zone, with: .color(active.accentColor.opacity(0.85)), lineWidth: 2)
+        }
+
+        // Steady highlight ring.
+        for position in activePositions {
+            let p = layout.point(for: position)
+            let isRoot = position.isTriadRoot || position.isRoot
+            fillCircle(
+                context: &context,
+                center: p,
+                radius: (isRoot ? 10 : 7.5) + 4.5,
+                color: active.accentColor.opacity(0.22)
+            )
+            let label = Text(position.note.rawValue)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(.white)
+            context.draw(label, at: p)
+        }
+
+        // Expanding pulse ring driven by the timeline phase (0…1).
+        let eased = 1 - pow(1 - pulsePhase, 2) // ease-out
+        let pulseRadius = 12 + CGFloat(eased) * 14
+        let pulseAlpha = (1 - pulsePhase) * 0.55
+        for position in activePositions {
+            strokeCircle(
+                context: &context,
+                center: layout.point(for: position),
+                radius: pulseRadius,
+                color: active.accentColor.opacity(pulseAlpha),
+                lineWidth: 2
+            )
+        }
+    }
+
+    /// Continuous rounded polyline through the walk order — replaces the
+    /// spaghetti of per-edge connection lines with a single readable thread.
+    private static func drawThreadPath(
+        context: inout GraphicsContext,
+        layout: FretboardLayout,
+        waypoints: [FretboardPosition]
+    ) {
+        guard waypoints.count >= 2 else { return }
+        var path = Path()
+        let first = layout.point(for: waypoints[0])
+        path.move(to: first)
+        for position in waypoints.dropFirst() {
+            path.addLine(to: layout.point(for: position))
+        }
+        context.stroke(
+            path,
+            with: .color(Color.orange.opacity(0.45)),
+            style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
+        )
+    }
+
+    private static func noteAccent(for position: FretboardPosition) -> Color {
+        if let role = position.chordRole {
+            return RSOGPalette.color(for: role)
+        }
+        return position.isRoot
+            ? RSOGPalette.color(for: ChordRole.tonic)
+            : Color(red: 0.35, green: 0.62, blue: 0.95).opacity(0.85)
+    }
+
     // MARK: Base note dots
     
     static func drawBaseNotes(

@@ -25,7 +25,9 @@ struct FretboardView: View {
                 fretboardCanvas
                     .frame(width: canvasMinWidth, height: canvasMinHeight)
                     .background(viewModel.showInfiniteBassPattern ? Color.white : Color.clear)
-                    .padding()
+                    // Reserve headroom so the fret-number row never overlaps the high-E string.
+                    .padding(.top, 26)
+                    .padding([.horizontal, .bottom])
             }
         }
         .navigationTitle("Fretboard Explorer")
@@ -471,7 +473,8 @@ struct FretboardView: View {
                 offsets: offsets,
                 showOutlines: true,
                 showNotePips: true,
-                showLabels: true
+                showLabels: true,
+                preferPrimaryPlacements: true
             )
         }
         

@@ -14,56 +14,30 @@ struct PatternGenerator {
     // MARK: - Spiral Mapping
     
     /// Ordered vertical spiral across the fretboard with path connections.
-    /// Walks string 6→1 in one fret column, then 1→6 in the next, etc.
+    /// The neck is treated as a helix: 3 in-key notes per string, winding
+    /// low E (6) → high E (1), then WRAPPING AROUND — the last high-E note
+    /// connects to the continuing note on the low E string. Direction never
+    /// reverses; that wrap is the spiral.
+    ///
+    /// This is the exact same run `BlockGenerator.tiledBlocks` partitions into
+    /// HEAD/BRIDGE/TRIPLE, so step-through playback walks the blocks in order.
     static func spiralMappingPattern(
         for key: Key,
         maxFret: Int = Constants.defaultFretCount
     ) -> Pattern {
-        let keyNotes = Set(FretboardCalculator.notesInKey(key))
-        var positions: [FretboardPosition] = []
+        let positions = BlockGenerator.spiralRun(for: key, maxFret: maxFret)
+
         var connections: [PatternConnection] = []
-        
-        // Column width aligns with HEAD XX-X span (~3 frets) + breathing room.
-        let columnWidth = 4
-        var ascending = true // low E (6) → high e (1)
-        
-        for colStart in stride(from: 0, through: maxFret, by: columnWidth) {
-            let colEnd = min(maxFret, colStart + columnWidth - 1)
-            let stringOrder = ascending
-                ? Array((1...Constants.numberOfStrings).reversed())
-                : Array(1...Constants.numberOfStrings)
-            
-            for string in stringOrder {
-                let notesOnString = (colStart...colEnd).compactMap { fret -> FretboardPosition? in
-                    let note = FretboardCalculator.noteAt(string: string, fret: fret)
-                    guard keyNotes.contains(note) else { return nil }
-                    let degree = FretboardCalculator.scaleDegree(of: note, in: key)
-                    return FretboardPosition(
-                        string: string,
-                        fret: fret,
-                        note: note,
-                        isRoot: note == key.rootNote,
-                        scaleDegree: degree
-                    )
-                }.sorted { $0.fret < $1.fret }
-                
-                for pos in notesOnString {
-                    if let prev = positions.last {
-                        connections.append(PatternConnection(from: prev, to: pos, kind: .spiral))
-                    }
-                    positions.append(pos)
-                }
-            }
-            
-            ascending.toggle()
+        for i in 1..<positions.count {
+            connections.append(PatternConnection(from: positions[i - 1], to: positions[i], kind: .spiral))
         }
-        
+
         return Pattern(
             name: "Spiral Mapping - \(key.rootNote.rawValue)",
             type: .spiralMapping,
             key: key,
             positions: positions,
-            description: "Spiral mapping walks the diatonic pattern vertically across the neck, column by column, leaving no in-key note unmapped.",
+            description: "Spiral mapping winds up the neck like a helix: 3 notes per string, low E → high E, wrapping around to the continuing note on the low E string — never retracing, leaving no in-key note unmapped.",
             connections: connections
         )
     }

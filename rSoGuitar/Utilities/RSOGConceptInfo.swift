@@ -91,20 +91,20 @@ enum RSOGConceptInfo {
     
     static func blockSubtitle(_ type: BlockType) -> String {
         switch type {
-        case .headBlock: return "XX-X · entry milestone"
-        case .bridgeBlock: return "X-XX · transitional zone"
-        case .tripleBlock: return "X-X-X · every other half-step (9 notes)"
+        case .headBlock: return "3 notes/string · low-E pair (often partial)"
+        case .bridgeBlock: return "3 notes/string · A–D transitional zone"
+        case .tripleBlock: return "3 notes/string · G–B–e (shifts at G–B)"
         }
     }
     
     static func blockDescription(_ type: BlockType) -> String {
         switch type {
         case .headBlock:
-            return "The HEAD block is a 6-note XX-X pattern — two adjacent frets, a gap, then one fret — on a perfect-4th string pair (primarily high E and B). It is the entry landmark that tells you where the whole diatonic pattern is sitting."
+            return "The HEAD block is a 6-note milestone — 3 notes per string on the low-E string pair at home position. Half of it lives on the virtual string below the nut, so you often see only its 3 low-E notes as a partial block."
         case .bridgeBlock:
-            return "The BRIDGE block is a 6-note X-XX pattern — one fret, a gap, then two adjacent frets — on the middle string pair (D and A). It connects HEAD and TRIPLE regions and supports horizontal jumping and position shifts."
+            return "The BRIDGE block is a 6-note milestone — 3 notes per string on the A and D strings. It is the transitional zone between HEAD and TRIPLE and supports horizontal jumping and position shifts."
         case .tripleBlock:
-            return "The TRIPLE block is a 9-note X-X-X pattern — three notes per string on every other half-step (frets 0, 2, 4 relative to the anchor) across three consecutive strings. It is always that spacing, never a variable shape."
+            return "The TRIPLE block is a 9-note milestone — 3 notes per string across G, B, and high E. The B-string row shifts one fret at the G–B major-third crossing; that shift is part of the pattern, not a mistake."
         }
     }
     

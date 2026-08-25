@@ -61,6 +61,143 @@ struct BlockGenerator {
         return sequenced
     }
     
+    // MARK: - Spiral Run & Block Tiling
+
+    /// The spiral run: the diatonic walk used by Spiral Mapping and block
+    /// tiling alike. Takes consecutive groups of 3 in-key notes per string,
+    /// winding low E (6) → high E (1), wrapping around to the next group on
+    /// the low E string each pass — 3 notes per string, no note unmapped.
+    static func spiralRun(for key: Key, maxFret: Int) -> [FretboardPosition] {
+        let keyNotes = Set(FretboardCalculator.notesInKey(key))
+        var perString: [(notes: [FretboardPosition], count: Int)] = []
+
+        for string in stride(from: Constants.numberOfStrings, through: 1, by: -1) {
+            var notes: [FretboardPosition] = []
+            for fret in 0...maxFret {
+                let note = FretboardCalculator.noteAt(string: string, fret: fret)
+                guard keyNotes.contains(note) else { continue }
+                notes.append(FretboardPosition(
+                    string: string,
+                    fret: fret,
+                    note: note,
+                    isRoot: note == key.rootNote,
+                    scaleDegree: FretboardCalculator.scaleDegree(of: note, in: key)
+                ))
+            }
+            perString.append((notes, notes.count))
+        }
+
+        var run: [FretboardPosition] = []
+        var pass = 0
+        while true {
+            var addedAny = false
+            for entry in perString {
+                let start = pass * 3
+                guard start < entry.count else { continue }
+                let slice = entry.notes[start..<min(start + 3, entry.count)]
+                run.append(contentsOf: slice)
+                addedAny = addedAny || !slice.isEmpty
+            }
+            if !addedAny { break }
+            pass += 1
+        }
+        return run
+    }
+
+    /// Tile the spiral run with the canonical block cycle
+    /// [HEAD · 6 notes][BRIDGE · 6 notes][TRIPLE · 9 notes], anchored per key.
+    ///
+    /// Anchor rule: the cycle begins 3 run-notes before the low-E string's
+    /// tonic fret (for C, fret 0). The first HEAD therefore spans the virtual
+    /// string 7 (perfect 4th below low E) plus the low E itself — only its
+    /// low-E half is visible, so home position shows HALF a HEAD block.
+    /// The first TRIPLE spans strings G–B–e; its B-string row sits one fret
+    /// off the P4 lattice — the G–B major-third shift — which emerges
+    /// automatically because every note is a real fretboard position.
+    /// Blocks cut off at the fretboard edges render as partial blocks.
+    static func tiledBlocks(for key: Key, maxFret: Int) -> [Block] {
+        let run = spiralRun(for: key, maxFret: maxFret)
+        let delta = ((key.rootNote.semitonesFromC % 12) + 12) % 12
+
+        guard let anchor = run.firstIndex(where: {
+            $0.string == Constants.numberOfStrings && $0.fret == delta
+        }) else { return [] }
+
+        // Virtual prepend — degrees ti–do–re on virtual string 7 (open B),
+        // completing the first HEAD below the physical low E string.
+        let prepend: [FretboardPosition] = [11, 0, 2].map { interval in
+            let letter = key.rootNote.addingSemitones(interval)
+            let fret = ((letter.semitonesFromC - Note.B.semitonesFromC) % 12 + 12) % 12
+            return FretboardPosition(
+                string: 7,
+                fret: fret,
+                note: letter,
+                isRoot: letter == key.rootNote
+            )
+        }
+
+        func position(at index: Int) -> FretboardPosition? {
+            if index < 0 {
+                let idx = index + prepend.count
+                return idx >= 0 ? prepend[idx] : nil
+            }
+            return index < run.count ? run[index] : nil
+        }
+
+        let cycle: [(type: BlockType, size: Int)] = [
+            (.headBlock, 6), (.bridgeBlock, 6), (.tripleBlock, 9)
+        ]
+
+        var blocks: [Block] = []
+        var sequenceIndex = 0
+        var sliceStart = anchor - 3
+
+        while sliceStart < run.count {
+            for (type, size) in cycle {
+                var positions: [FretboardPosition] = []
+                var seen: Set<String> = []
+                for i in sliceStart..<(sliceStart + size) {
+                    guard let pos = position(at: i),
+                          (1...Constants.numberOfStrings).contains(pos.string),
+                          seen.insert(pos.coordinateKey).inserted else { continue }
+                    positions.append(pos)
+                }
+
+                if !positions.isEmpty {
+                    blocks.append(makeBlock(
+                        type: type,
+                        name: RSOGConceptInfo.blockTitle(type),
+                        description: tiledBlockDescription(type, notes: positions.count),
+                        positions: positions,
+                        anchorFret: positions.map(\.fret).min() ?? 0,
+                        sequenceIndex: sequenceIndex
+                    ))
+                    sequenceIndex += 1
+                }
+                sliceStart += size
+            }
+        }
+
+        return blocks
+    }
+
+    private static func tiledBlockDescription(_ type: BlockType, notes: Int) -> String {
+        let fullCount: Int
+        switch type {
+        case .headBlock, .bridgeBlock: fullCount = 6
+        case .tripleBlock: fullCount = 9
+        }
+        let label = notes < fullCount ? "Partial" : "Full"
+        switch type {
+        case .headBlock:
+            return "\(label) HEAD block — 3 notes per string on the low-E pair. In home position half of the block lives on the virtual string below the nut, so only the low-E row shows."
+        case .bridgeBlock:
+            return "\(label) BRIDGE block — 3 notes per string on the A and D strings, the transitional zone between HEAD and TRIPLE."
+        case .tripleBlock:
+            return "\(label) TRIPLE block — 3 notes per string across G, B, and high E. The B-string row shifts one fret at the G–B major-third crossing."
+        }
+    }
+
     // MARK: - Diatonic Pattern Generation
     
     /// Generate the full diatonic pattern for a key.
